@@ -1,0 +1,223 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Modern Blue-Violet palette - Professional & Trustworthy */
+    --background: 220 20% 98%;
+    --foreground: 230 25% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 230 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 230 25% 15%;
+
+    /* Deep Blue - Primary (Trust & Reliability) */
+    --primary: 230 70% 50%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 230 60% 95%;
+    --primary-dark: 230 75% 40%;
+
+    /* Coral/Salmon - Accent/Action (Warmth & Energy) */
+    --accent: 12 85% 60%;
+    --accent-foreground: 0 0% 100%;
+    --accent-light: 12 100% 96%;
+    --accent-dark: 12 80% 48%;
+
+    --secondary: 230 15% 95%;
+    --secondary-foreground: 230 20% 30%;
+
+    --muted: 220 15% 94%;
+    --muted-foreground: 230 10% 45%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 230 15% 90%;
+    --input: 230 15% 90%;
+    --ring: 230 70% 50%;
+
+    --radius: 0.875rem;
+
+    /* Success color for savings */
+    --success: 145 65% 42%;
+    --success-foreground: 0 0% 100%;
+    --success-light: 145 60% 94%;
+
+    /* Custom shadows */
+    --shadow-card: 0 2px 16px -4px hsl(230 25% 15% / 0.06);
+    --shadow-card-hover: 0 8px 28px -8px hsl(230 25% 15% / 0.12);
+    --shadow-button: 0 4px 14px -3px hsl(12 85% 60% / 0.35);
+
+    /* Gradients */
+    --gradient-hero: linear-gradient(135deg, hsl(230 70% 50%) 0%, hsl(260 65% 55%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(12 85% 60%) 0%, hsl(12 80% 48%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 20% 98%) 100%);
+    --gradient-profile: linear-gradient(135deg, hsl(230 70% 50%) 0%, hsl(280 60% 55%) 50%, hsl(12 85% 60%) 100%);
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 230 25% 8%;
+    --foreground: 220 20% 95%;
+
+    --card: 230 20% 12%;
+    --card-foreground: 220 20% 95%;
+
+    --popover: 230 20% 12%;
+    --popover-foreground: 220 20% 95%;
+
+    --primary: 230 65% 60%;
+    --primary-foreground: 230 25% 8%;
+    --primary-light: 230 40% 20%;
+    --primary-dark: 230 70% 70%;
+
+    --accent: 12 80% 58%;
+    --accent-foreground: 0 0% 100%;
+    --accent-light: 12 50% 20%;
+    --accent-dark: 12 85% 68%;
+
+    --secondary: 230 15% 18%;
+    --secondary-foreground: 220 20% 90%;
+
+    --muted: 230 15% 15%;
+    --muted-foreground: 220 10% 60%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 145 55% 50%;
+    --success-foreground: 0 0% 100%;
+    --success-light: 145 40% 18%;
+
+    --border: 230 15% 20%;
+    --input: 230 15% 20%;
+    --ring: 230 65% 60%;
+
+    --shadow-card: 0 4px 20px -4px hsl(0 0% 0% / 0.3);
+    --shadow-card-hover: 0 12px 32px -8px hsl(0 0% 0% / 0.5);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight;
+  }
+}
+
+@layer components {
+  .card-elevated {
+    @apply bg-card rounded-2xl;
+    box-shadow: var(--shadow-card);
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
+  }
+
+  .card-elevated:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
+  }
+
+  .btn-action {
+    background: var(--gradient-accent);
+    box-shadow: var(--shadow-button);
+    @apply text-accent-foreground font-semibold rounded-xl px-6 py-3;
+    transition: all 0.2s ease;
+  }
+
+  .btn-action:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+  }
+
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  .gradient-profile {
+    background: var(--gradient-profile);
+  }
+
+  .gradient-text {
+    background: var(--gradient-hero);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .price-best {
+    @apply font-bold;
+    color: hsl(var(--success));
+  }
+
+  .price-regular {
+    @apply text-muted-foreground;
+  }
+
+  .badge-savings {
+    background-color: hsl(var(--success-light));
+    color: hsl(var(--success));
+    @apply px-2 py-0.5 rounded-full text-xs font-semibold;
+  }
+
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50;
+  }
+}
+
+@layer utilities {
+  .animate-fade-up {
+    animation: fadeUp 0.5s ease-out forwards;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.3s ease-out forwards;
+  }
+
+  @keyframes fadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .stagger-1 { animation-delay: 0.1s; }
+  .stagger-2 { animation-delay: 0.2s; }
+  .stagger-3 { animation-delay: 0.3s; }
+  .stagger-4 { animation-delay: 0.4s; }
+}
