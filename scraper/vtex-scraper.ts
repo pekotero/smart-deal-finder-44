@@ -1,10 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 import 'dotenv/config';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('❌ ERROR FATAL: No se encontraron las credenciales SUPABASE_URL o SUPABASE_SERVICE_KEY.');
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const STORES: Record<string, string> = {
   carrefour: 'www.carrefour.com.ar',
@@ -35,7 +40,6 @@ async function getOrCreateCategoryId(categoryName: string): Promise<string | nul
     return categoryCache[categoryName];
   }
 
-  // 1. Buscar si ya existe
   const { data: existing } = await supabase
     .from('categories')
     .select('id')
@@ -47,7 +51,6 @@ async function getOrCreateCategoryId(categoryName: string): Promise<string | nul
     return existing.id;
   }
 
-  // 2. Si no existe, crearla
   const { data: created, error } = await supabase
     .from('categories')
     .insert({
@@ -134,7 +137,6 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string, 
 
     let productId: string | null = null;
 
-    // 1. INTENTAR BUSCAR POR CÓDIGO DE BARRAS (EAN)
     if (eanCode) {
       const { data: eanMatch } = await supabase
         .from('products')
@@ -147,7 +149,6 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string, 
       }
     }
 
-    // 2. BUSCAR POR NOMBRE EXACTO
     if (!productId) {
       const { data: nameMatch } = await supabase
         .from('products')
@@ -160,7 +161,6 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string, 
       }
     }
 
-    // 3. SI NO EXISTE, CREAR EL PRODUCTO NUEVO CON CATEGORÍA
     if (!productId) {
       const { data: created, error } = await supabase
         .from('products')
@@ -183,7 +183,6 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string, 
         continue;
       }
     } else {
-      // Si el producto ya existía, asegurarse de asignarle la categoría si no la tenía
       if (categoryId) {
         await supabase
           .from('products')
@@ -195,7 +194,6 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string, 
 
     if (!productId) continue;
 
-    // 4. GUARDAR PRECIOS
     for (const store of stores) {
       await supabase
         .from('prices')
