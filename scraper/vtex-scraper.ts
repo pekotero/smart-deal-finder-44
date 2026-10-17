@@ -33,31 +33,30 @@ interface VTEXProduct {
 
 async function search(storeKey: string, query: string): Promise<VTEXProduct[]> {
   const domain = STORES[storeKey];
-  const url = `https://${domain}/api/catalog_system/pub/products/search/${encodeURIComponent(query)}?max=10`;
+  const url = `https://${domain}/api/catalog_system/pub/products/search/${encodeURIComponent(query)}?max=15`;
 
-  console.log(`  Buscando "${query}" en ${storeKey}...`);
+  console.log(`  🔍 Buscando "${query}" en ${storeKey.toUpperCase()}...`);
 
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
     });
     if (!res.ok) return [];
     return await res.json();
   } catch {
-    console.log(`  Error conectando a ${storeKey}`);
+    console.log(`  ❌ Error conectando a ${storeKey}`);
     return [];
   }
 }
 
-async function save(vtexProduct: VTEXProduct, storeKey: string) {
-  const { data: store } = await supabase
+async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) {
+  // Obtener TODAS las sucursales de esta cadena
+  const { data: stores } = await supabase
     .from('stores')
     .select('id')
-    .eq('chain', storeKey)
-    .limit(1)
-    .single();
+    .eq('chain', storeKey);
 
-  if (!store) return;
+  if (!stores || stores.length === 0) return;
 
   for (const item of vtexProduct.items) {
     const seller = item.sellers[0];
@@ -66,25 +65,45 @@ async function save(vtexProduct: VTEXProduct, storeKey: string) {
     const price = seller.commertialOffer.Price;
     const listPrice = seller.commertialOffer.ListPrice;
     const img = item.images[0]?.imageUrl?.replace('http://', 'https://') || null;
+    const eanCode = item.ean && item.ean.length >= 8 ? item.ean : null;
 
     let productId: string | null = null;
 
-    const { data: existing } = await supabase
-      .from('products')
-      .select('id')
-      .ilike('name', vtexProduct.productName)
-      .maybeSingle();
+    // 1. INTENTAR BUSCAR POR CÓDIGO DE BARRAS (EAN)
+    if (eanCode) {
+      const { data: eanMatch } = await supabase
+        .from('products')
+        .select('id')
+        .eq('ean', eanCode)
+        .maybeSingle();
 
-    if (existing) {
-      productId = existing.id;
-    } else {
-      const { data: created } = await supabase
+      if (eanMatch) {
+        productId = eanMatch.id;
+      }
+    }
+
+    // 2. SI NO MATCHEA POR EAN, BUSCAR POR NOMBRE EXACTO
+    if (!productId) {
+      const { data: nameMatch } = await supabase
+        .from('products')
+        .select('id')
+        .ilike('name', vtexProduct.productName)
+        .maybeSingle();
+
+      if (nameMatch) {
+        productId = nameMatch.id;
+      }
+    }
+
+    // 3. SI NO EXISTE, CREAR EL PRODUCTO NUEVO
+    if (!productId) {
+      const { data: created, error } = await supabase
         .from('products')
         .insert({
           name: vtexProduct.productName,
           brand: vtexProduct.brand || null,
           image_url: img,
-          ean: item.ean || null,
+          ean: eanCode,
           is_user_contributed: false,
         })
         .select('id')
@@ -92,33 +111,52 @@ async function save(vtexProduct: VTEXProduct, storeKey: string) {
 
       if (created) {
         productId = created.id;
-        console.log(`    + Nuevo: ${vtexProduct.productName}`);
+        console.log(`    ✨ Nuevo producto global: ${vtexProduct.productName} (EAN: ${eanCode || 'Sin EAN'})`);
+      } else if (error) {
+        console.error(`    ⚠️ Error al crear producto:`, error.message);
+        continue;
       }
+    } else {
+      console.log(`    🔗 ¡Coincidencia encontrada! Agrupando precio para: ${vtexProduct.productName}`);
     }
 
     if (!productId) continue;
 
-    await supabase.from('prices').insert({
-      product_id: productId,
-      store_id: store.id,
-      price,
-      original_price: listPrice !== price ? listPrice : null,
-      source: 'scraped',
-      verified: true,
-      last_updated: new Date().toISOString(),
-    });
+    // 4. GUARDAR O ACTUALIZAR EL PRECIO PARA TODAS LAS SUCURSALES DE LA CADENA
+    for (const store of stores) {
+      // Borrar precio viejo si existe para evitar duplicados
+      await supabase
+        .from('prices')
+        .delete()
+        .eq('product_id', productId)
+        .eq('store_id', store.id);
+
+      // Insertar precio nuevo
+      await supabase.from('prices').insert({
+        product_id: productId,
+        store_id: store.id,
+        price,
+        original_price: listPrice !== price ? listPrice : null,
+        source: 'scraped',
+        verified: true,
+        last_updated: new Date().toISOString(),
+      });
+    }
   }
 }
 
 export async function scrapeAll(queries: string[]) {
   for (const storeKey of Object.keys(STORES)) {
-    console.log(`\n=== ${storeKey.toUpperCase()} ===`);
+    console.log(`\n========================================`);
+    console.log(`🛒 ESCANEANDO: ${storeKey.toUpperCase()}`);
+    console.log(`========================================`);
     for (const q of queries) {
       const products = await search(storeKey, q);
       for (const p of products) {
-        await save(p, storeKey);
+        await saveProductAndPrices(p, storeKey);
       }
-      await new Promise(r => setTimeout(r, 1000));
+      // Pausa respetuosa para no ser bloqueados
+      await new Promise((r) => setTimeout(r, 800));
     }
   }
 }
