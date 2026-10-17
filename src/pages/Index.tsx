@@ -46,7 +46,7 @@ const Index = () => {
     searchQuery: debouncedSearchQuery,
     userLatitude,
     userLongitude,
-    maxDistanceKm: 500, // Search in the whole city
+    maxDistanceKm: 30, // Search in the whole city
     cityId: selectedCityId,
   });
   
@@ -54,7 +54,7 @@ const Index = () => {
   const { data: stores = [], isLoading: storesLoading } = useStores({
     userLatitude,
     userLongitude,
-    maxDistanceKm: 500, // Show stores in the whole city
+    maxDistanceKm: 30, // Show stores in the whole city
     cityId: selectedCityId,
   });
   
