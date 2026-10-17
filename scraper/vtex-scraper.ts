@@ -9,19 +9,66 @@ const supabase = createClient(
 const STORES: Record<string, string> = {
   carrefour: 'www.carrefour.com.ar',
   jumbo: 'www.jumbo.com.ar',
-  disco: 'www.disco.com.import { createClient } from '@supabase/supabase-js';
-import 'dotenv/config';
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
-
-const STORES: Record<string, string> = {
-  carrefour: 'www.carrefour.com.ar',
-  jumbo: 'www.jumbo.com.ar',
   disco: 'www.disco.com.ar',
 };
+
+// Mapa de búsquedas a nombres de categorías
+function getCategoryName(query: string): string {
+  const q = query.toLowerCase();
+  if (['coca cola', 'pepsi', 'sprite', 'agua mineral', 'cerveza', 'jugo', 'gaseosa'].some(k => q.includes(k))) {
+    return 'Bebidas';
+  }
+  if (['leche', 'yogur', 'manteca', 'queso', 'crema'].some(k => q.includes(k))) {
+    return 'Lácteos';
+  }
+  if (['lavandina', 'detergente', 'jabon', 'papel higienico', 'limpiador'].some(k => q.includes(k))) {
+    return 'Limpieza';
+  }
+  return 'Almacén';
+}
+
+// Caché de categorías para no saturar la base de datos
+const categoryCache: Record<string, string> = {};
+
+async function getOrCreateCategoryId(categoryName: string): Promise<string | null> {
+  if (categoryCache[categoryName]) {
+    return categoryCache[categoryName];
+  }
+
+  // 1. Buscar si ya existe
+  const { data: existing } = await supabase
+    .from('categories')
+    .select('id')
+    .ilike('name', categoryName)
+    .maybeSingle();
+
+  if (existing) {
+    categoryCache[categoryName] = existing.id;
+    return existing.id;
+  }
+
+  // 2. Si no existe, crearla
+  const { data: created, error } = await supabase
+    .from('categories')
+    .insert({
+      name: categoryName,
+      slug: categoryName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+      icon: categoryName === 'Bebidas' ? 'cup-soda' : categoryName === 'Lácteos' ? 'milk' : categoryName === 'Limpieza' ? 'sparkles' : 'shopping-bag'
+    })
+    .select('id')
+    .single();
+
+  if (created) {
+    categoryCache[categoryName] = created.id;
+    return created.id;
+  }
+
+  if (error) {
+    console.error(`Error al crear categoría ${categoryName}:`, error.message);
+  }
+
+  return null;
+}
 
 interface VTEXProduct {
   productId: string;
@@ -60,14 +107,16 @@ async function search(storeKey: string, query: string): Promise<VTEXProduct[]> {
   }
 }
 
-async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) {
-  // Obtener TODAS las sucursales de esta cadena
+async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string, query: string) {
   const { data: stores } = await supabase
     .from('stores')
     .select('id')
     .eq('chain', storeKey);
 
   if (!stores || stores.length === 0) return;
+
+  const categoryName = getCategoryName(query);
+  const categoryId = await getOrCreateCategoryId(categoryName);
 
   for (const item of vtexProduct.items) {
     const seller = item.sellers[0];
@@ -76,7 +125,6 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) 
     const price = seller.commertialOffer.Price;
     const rawListPrice = seller.commertialOffer.ListPrice;
 
-    // Sanear el precio original para ignorar errores de VTEX (precios inflados o corruptos)
     const validOriginalPrice = (rawListPrice > price && rawListPrice <= price * 2.5) 
       ? rawListPrice 
       : null;
@@ -99,7 +147,7 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) 
       }
     }
 
-    // 2. SI NO MATCHEA POR EAN, BUSCAR POR NOMBRE EXACTO
+    // 2. BUSCAR POR NOMBRE EXACTO
     if (!productId) {
       const { data: nameMatch } = await supabase
         .from('products')
@@ -112,7 +160,7 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) 
       }
     }
 
-    // 3. SI NO EXISTE, CREAR EL PRODUCTO NUEVO
+    // 3. SI NO EXISTE, CREAR EL PRODUCTO NUEVO CON CATEGORÍA
     if (!productId) {
       const { data: created, error } = await supabase
         .from('products')
@@ -121,6 +169,7 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) 
           brand: vtexProduct.brand || null,
           image_url: img,
           ean: eanCode,
+          category_id: categoryId,
           is_user_contributed: false,
         })
         .select('id')
@@ -128,27 +177,32 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) 
 
       if (created) {
         productId = created.id;
-        console.log(`    ✨ Nuevo producto global: ${vtexProduct.productName} (EAN: ${eanCode || 'Sin EAN'})`);
+        console.log(`    ✨ Nuevo producto: ${vtexProduct.productName} [${categoryName}]`);
       } else if (error) {
         console.error(`    ⚠️ Error al crear producto:`, error.message);
         continue;
       }
     } else {
+      // Si el producto ya existía, asegurarse de asignarle la categoría si no la tenía
+      if (categoryId) {
+        await supabase
+          .from('products')
+          .update({ category_id: categoryId })
+          .eq('id', productId);
+      }
       console.log(`    🔗 Coincidencia encontrada! Agrupando precio para: ${vtexProduct.productName}`);
     }
 
     if (!productId) continue;
 
-    // 4. GUARDAR O ACTUALIZAR EL PRECIO PARA TODAS LAS SUCURSALES DE LA CADENA
+    // 4. GUARDAR PRECIOS
     for (const store of stores) {
-      // Borrar precio viejo si existe para evitar duplicados
       await supabase
         .from('prices')
         .delete()
         .eq('product_id', productId)
         .eq('store_id', store.id);
 
-      // Insertar precio nuevo
       await supabase.from('prices').insert({
         product_id: productId,
         store_id: store.id,
@@ -170,9 +224,8 @@ export async function scrapeAll(queries: string[]) {
     for (const q of queries) {
       const products = await search(storeKey, q);
       for (const p of products) {
-        await saveProductAndPrices(p, storeKey);
+        await saveProductAndPrices(p, storeKey, q);
       }
-      // Pausa respetuosa para no ser bloqueados
       await new Promise((r) => setTimeout(r, 800));
     }
   }
