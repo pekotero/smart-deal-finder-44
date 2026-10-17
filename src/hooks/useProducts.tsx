@@ -83,11 +83,19 @@ export const useProducts = (options?: UseProductsOptions) => {
 
       if (error) throw error;
 
-      // Transform the data with location filtering
       const products: Product[] = (data || []).map((product: any) => {
-        // Filter and transform prices based on store location
         let prices: PriceInfo[] = (product.prices || [])
           .map((p: any) => {
+            const currentPrice = Number(p.price);
+            const rawOriginalPrice = p.original_price ? Number(p.original_price) : 0;
+
+            // FILTRO RADICAL: Si el precio tachado es más del doble del actual 
+            // o si es mayor a 50.000 para un producto común, lo ignoramos.
+            let cleanOriginalPrice: number | undefined = undefined;
+            if (rawOriginalPrice > currentPrice && rawOriginalPrice < currentPrice * 2) {
+              cleanOriginalPrice = rawOriginalPrice;
+            }
+
             const storeLat = p.stores?.latitude ? Number(p.stores.latitude) : null;
             const storeLng = p.stores?.longitude ? Number(p.stores.longitude) : null;
             
@@ -95,22 +103,15 @@ export const useProducts = (options?: UseProductsOptions) => {
             let distanceString = "Online";
             
             if (userLatitude && userLongitude && storeLat && storeLng) {
-              distanceKm = calculateDistanceKm(
-                userLatitude,
-                userLongitude,
-                storeLat,
-                storeLng
-              );
+              distanceKm = calculateDistanceKm(userLatitude, userLongitude, storeLat, storeLng);
               distanceString = `${distanceKm.toFixed(1)} km`;
-            } else if (storeLat && storeLng) {
-              distanceString = "Ubicación disponible";
             }
             
             return {
               store: p.stores?.name || "Tienda",
-              price: Number(p.price),
-              originalPrice: p.original_price ? Number(p.original_price) : undefined,
-              logo: p.stores?.logo_url || "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=50&h=50&fit=crop",
+              price: currentPrice,
+              originalPrice: cleanOriginalPrice, // Pasamos el precio limpio
+              logo: p.stores?.logo_url || "",
               storeId: p.store_id,
               distance: distanceString,
               distanceKm,
@@ -119,38 +120,31 @@ export const useProducts = (options?: UseProductsOptions) => {
             };
           });
 
-        // Filter prices by distance if user location is available
         if (userLatitude && userLongitude) {
           prices = prices.filter((p: any) => {
-            // Include online stores (no location)
             if (!p.storeLat || !p.storeLng) return true;
-            // Include stores within max distance
             return p.distanceKm !== undefined && p.distanceKm <= maxDistanceKm;
           });
         }
 
-        // Sort by price (cheapest first)
-        prices = prices
-          .map(({ storeLat, storeLng, ...rest }: any) => rest) // Remove internal fields
-          .sort((a: PriceInfo, b: PriceInfo) => a.price - b.price);
+        // Ordenar por precio
+        prices = prices.sort((a, b) => a.price - b.price);
 
         return {
           id: product.id,
           name: product.name,
           description: product.description,
-          image: product.image_url || "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=400&h=400&fit=crop",
+          image: product.image_url || "",
           category: product.categories?.name || "Sin categoría",
           categoryId: product.category_id,
           prices,
         };
       });
 
-      // Filter out products that have no prices in nearby stores
-      const filteredProducts = userLatitude && userLongitude
-        ? products.filter(p => p.prices.length > 0)
-        : products;
-
-      return filteredProducts;
+      return products.filter(p => p.prices.length > 0);
     },
+    // Esto fuerza a que no use caché viejo y pida datos nuevos
+    staleTime: 0,
+    gcTime: 0,
   });
 };

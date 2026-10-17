@@ -9,6 +9,17 @@ const supabase = createClient(
 const STORES: Record<string, string> = {
   carrefour: 'www.carrefour.com.ar',
   jumbo: 'www.jumbo.com.ar',
+  disco: 'www.disco.com.import { createClient } from '@supabase/supabase-js';
+import 'dotenv/config';
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY!
+);
+
+const STORES: Record<string, string> = {
+  carrefour: 'www.carrefour.com.ar',
+  jumbo: 'www.jumbo.com.ar',
   disco: 'www.disco.com.ar',
 };
 
@@ -63,7 +74,13 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) 
     if (!seller || seller.commertialOffer.AvailableQuantity === 0) continue;
 
     const price = seller.commertialOffer.Price;
-    const listPrice = seller.commertialOffer.ListPrice;
+    const rawListPrice = seller.commertialOffer.ListPrice;
+
+    // Sanear el precio original para ignorar errores de VTEX (precios inflados o corruptos)
+    const validOriginalPrice = (rawListPrice > price && rawListPrice <= price * 2.5) 
+      ? rawListPrice 
+      : null;
+
     const img = item.images[0]?.imageUrl?.replace('http://', 'https://') || null;
     const eanCode = item.ean && item.ean.length >= 8 ? item.ean : null;
 
@@ -117,7 +134,7 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) 
         continue;
       }
     } else {
-      console.log(`    🔗 ¡Coincidencia encontrada! Agrupando precio para: ${vtexProduct.productName}`);
+      console.log(`    🔗 Coincidencia encontrada! Agrupando precio para: ${vtexProduct.productName}`);
     }
 
     if (!productId) continue;
@@ -136,7 +153,7 @@ async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string) 
         product_id: productId,
         store_id: store.id,
         price,
-        original_price: listPrice !== price ? listPrice : null,
+        original_price: validOriginalPrice,
         source: 'scraped',
         verified: true,
         last_updated: new Date().toISOString(),
