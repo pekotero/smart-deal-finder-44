@@ -1,276 +1,33 @@
 import fs from "fs";
 import path from "path";
 
-console.log("🚀 Actualizando scraper de precios para usar SUPABASE_SERVICE_KEY...");
+console.log("🚀 Cambiando título y favicon de la aplicación...");
 
-const scraperCode = `import { createClient } from "@supabase/supabase-js";
-import * as dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
+const indexHtmlContent = `<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Deal Finder - Compará Precios de Supermercados</title>
+    <meta name="description" content="Compará precios en tiempo real entre Coto, Carrefour, Jumbo y más en Rosario y toda Argentina." />
+    <meta name="author" content="Smart Deal Finder" />
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+    <!-- Icono de la pestaña del navegador (Changuito de Compras) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛒</text></svg>" />
 
-const envPath = path.resolve(__dirname, ".env");
-const rootEnvPath = path.resolve(__dirname, "../.env");
+    <!-- Estilos de Leaflet para el Mapa -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+         crossorigin=""/>
+  </head>
 
-if (fs.existsSync(envPath)) {
-  dotenv.config({ path: envPath });
-} else if (fs.existsSync(rootEnvPath)) {
-  dotenv.config({ path: rootEnvPath });
-}
-
-// Soporta SUPABASE_URL / VITE_SUPABASE_URL y SUPABASE_SERVICE_KEY / SUPABASE_SERVICE_ROLE_KEY
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  console.error("❌ ERROR: No se encontraron las credenciales de Supabase.");
-  process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-const SEARCH_KEYWORDS = [
-  "leche",
-  "aceite",
-  "yerba",
-  "azucar",
-  "fideos",
-  "arroz",
-  "galletitas",
-  "coca cola",
-  "cafe",
-  "jabon",
-  "manteca",
-  "queso",
-  "yogur",
-  "detergente"
-];
-
-function sanitizeName(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\\u0300-\\u036f]/g, "")
-    .replace(/[^a-z0-9\\s]/g, " ")
-    .replace(/\\s+/g, " ")
-    .trim();
-}
-
-interface ScrapedProduct {
-  storeChain: "Coto" | "Carrefour" | "Jumbo";
-  name: string;
-  cleanName: string;
-  ean?: string;
-  price: number;
-  originalPrice?: number;
-  imageUrl?: string;
-}
-
-async function scrapeCoto(keyword: string): Promise<ScrapedProduct[]> {
-  const products: ScrapedProduct[] = [];
-  try {
-    const url = "https://ac.cnstrc.com/search/" + encodeURIComponent(keyword) + "?key=key_r6xzz4IAoTWcipni&num_results_per_page=15";
-    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!res.ok) return products;
-
-    const data = await res.json();
-    const results = data.response?.results || [];
-
-    for (const item of results) {
-      const dataObj = item.data || {};
-      const price = Number(dataObj.product_list_price || dataObj.price || (dataObj.price && dataObj.price[0]?.listPrice));
-      if (!price || isNaN(price) || price <= 0) continue;
-
-      const name = item.value || dataObj.name || "";
-      const ean = dataObj.gtin || dataObj.ean || dataObj.id;
-
-      products.push({
-        storeChain: "Coto",
-        name,
-        cleanName: sanitizeName(name),
-        ean: ean ? String(ean) : undefined,
-        price,
-        imageUrl: dataObj.image_url || dataObj.imageUrl
-      });
-    }
-  } catch (err) {
-    console.warn("⚠️ Error scrapeando Coto para " + keyword);
-  }
-  return products;
-}
-
-async function scrapeCarrefour(keyword: string): Promise<ScrapedProduct[]> {
-  const products: ScrapedProduct[] = [];
-  try {
-    const url = "https://www.carrefour.com.ar/api/catalog_system/pub/products/search/" + encodeURIComponent(keyword) + "?_from=0&_to=15";
-    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!res.ok) return products;
-
-    const items = await res.json();
-    if (!Array.isArray(items)) return products;
-
-    for (const item of items) {
-      const sku = item.items?.[0];
-      const seller = sku?.sellers?.[0]?.commertialOffer;
-      const price = Number(seller?.Price);
-
-      if (!price || isNaN(price) || price <= 0) continue;
-
-      const name = item.productName || "";
-      const ean = sku?.ean;
-      const originalPrice = Number(seller?.ListPrice);
-
-      products.push({
-        storeChain: "Carrefour",
-        name,
-        cleanName: sanitizeName(name),
-        ean: ean ? String(ean) : undefined,
-        price,
-        originalPrice: originalPrice && originalPrice > price ? originalPrice : undefined,
-        imageUrl: sku?.images?.[0]?.imageUrl
-      });
-    }
-  } catch (err) {
-    console.warn("⚠️ Error scrapeando Carrefour para " + keyword);
-  }
-  return products;
-}
-
-async function scrapeJumbo(keyword: string): Promise<ScrapedProduct[]> {
-  const products: ScrapedProduct[] = [];
-  try {
-    const url = "https://www.jumbo.com.ar/api/catalog_system/pub/products/search/" + encodeURIComponent(keyword) + "?_from=0&_to=15";
-    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!res.ok) return products;
-
-    const items = await res.json();
-    if (!Array.isArray(items)) return products;
-
-    for (const item of items) {
-      const sku = item.items?.[0];
-      const seller = sku?.sellers?.[0]?.commertialOffer;
-      const price = Number(seller?.Price);
-
-      if (!price || isNaN(price) || price <= 0) continue;
-
-      const name = item.productName || "";
-      const ean = sku?.ean;
-      const originalPrice = Number(seller?.ListPrice);
-
-      products.push({
-        storeChain: "Jumbo",
-        name,
-        cleanName: sanitizeName(name),
-        ean: ean ? String(ean) : undefined,
-        price,
-        originalPrice: originalPrice && originalPrice > price ? originalPrice : undefined,
-        imageUrl: sku?.images?.[0]?.imageUrl
-      });
-    }
-  } catch (err) {
-    console.warn("⚠️ Error scrapeando Jumbo para " + keyword);
-  }
-  return products;
-}
-
-async function startPriceScraper() {
-  console.log("🛒 Extrayendo precios reales de Coto, Carrefour y Jumbo...");
-
-  const { data: stores } = await supabase.from("stores").select("id, name");
-  if (!stores || stores.length === 0) {
-    console.error("❌ No se encontraron tiendas en la base de datos.");
-    return;
-  }
-
-  const getStoreIdForChain = (chain: string): string => {
-    const matched = stores.find((s) => s.name.toLowerCase().includes(chain.toLowerCase()));
-    return matched ? matched.id : stores[0].id;
-  };
-
-  let totalItemsScraped = 0;
-
-  for (const keyword of SEARCH_KEYWORDS) {
-    console.log("\\n🔎 Buscando ofertas para: \\"" + keyword + "\\"... ");
-
-    const [cotoItems, carrefourItems, jumboItems] = await Promise.all([
-      scrapeCoto(keyword),
-      scrapeCarrefour(keyword),
-      scrapeJumbo(keyword)
-    ]);
-
-    const allItems = [...cotoItems, ...carrefourItems, ...jumboItems];
-    console.log("  └─ Encontrados: Coto (" + cotoItems.length + "), Carrefour (" + carrefourItems.length + "), Jumbo (" + jumboItems.length + ")");
-
-    for (const item of allItems) {
-      let existingProductId: string | null = null;
-
-      if (item.ean) {
-        const { data: byEan } = await supabase
-          .from("products")
-          .select("id")
-          .eq("ean", item.ean)
-          .maybeSingle();
-        if (byEan) existingProductId = byEan.id;
-      }
-
-      if (!existingProductId) {
-        const { data: byName } = await supabase
-          .from("products")
-          .select("id")
-          .ilike("name", "%" + item.name + "%")
-          .maybeSingle();
-        if (byName) existingProductId = byName.id;
-      }
-
-      if (!existingProductId) {
-        const { data: newProd, error: prodErr } = await supabase
-          .from("products")
-          .insert({
-            name: item.name,
-            image_url: item.imageUrl || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&q=80",
-            ean: item.ean || null
-          })
-          .select("id")
-          .single();
-
-        if (prodErr || !newProd) continue;
-        existingProductId = newProd.id;
-      }
-
-      const storeId = getStoreIdForChain(item.storeChain);
-      if (!storeId) continue;
-
-      await supabase
-        .from("prices")
-        .delete()
-        .eq("product_id", existingProductId)
-        .eq("store_id", storeId);
-
-      const { error: priceErr } = await supabase.from("prices").insert({
-        product_id: existingProductId,
-        store_id: storeId,
-        price: item.price,
-        original_price: item.originalPrice || null
-      });
-
-      if (!priceErr) totalItemsScraped++;
-    }
-  }
-
-  console.log("\\n🎉 ¡Sincronización finalizada! Se registraron " + totalItemsScraped + " ofertas comparadas.");
-}
-
-startPriceScraper();
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
 `;
 
-const scraperDir = path.join(process.cwd(), "scraper");
-if (!fs.existsSync(scraperDir)) {
-  fs.mkdirSync(scraperDir, { recursive: true });
-}
+fs.writeFileSync(path.join(process.cwd(), "index.html"), indexHtmlContent, "utf-8");
 
-fs.writeFileSync(path.join(scraperDir, "scrape-prices-all.ts"), scraperCode, "utf-8");
-
-console.log("✅ Scraper actualizado en: scraper/scrape-prices-all.ts");
+console.log("✅ index.html actualizado con el nombre 'Smart Deal Finder' e icono 🛒");
