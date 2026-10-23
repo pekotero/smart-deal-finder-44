@@ -1,71 +1,64 @@
-import { MapPin, Star, Clock } from "lucide-react";
+import { MapPin, Navigation } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
-interface StoreCardProps {
-  id?: string;
+export interface StoreCardProps {
+  id: string;
   name: string;
-  logo: string;
-  address: string;
-  rating: number;
-  distance: string;
-  isOpen: boolean;
-  productsCount: number;
-  latitude?: number | null;
-  longitude?: number | null;
-  onClick?: () => void;
+  address?: string;
+  city?: string;
+  distance?: number | null;
+  distanceKm?: number | null;
+  image_url?: string;
+  logo_url?: string;
+  image?: string;
+  logo?: string;
+  rating?: number;
+  active_deals?: number;
 }
 
 const StoreCard = ({
   name,
-  logo,
   address,
-  rating,
+  city,
   distance,
-  isOpen,
-  productsCount,
-  onClick,
+  distanceKm,
+  image_url,
+  logo_url,
+  image,
+  logo,
 }: StoreCardProps) => {
+  // Validación segura de la distancia para evitar error con .toFixed()
+  const rawDist = distance ?? distanceKm;
+  const distNumber = typeof rawDist === "number" && !isNaN(rawDist) ? rawDist : null;
+
+  const displayImage = image_url || image || "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=500&q=80";
+  const displayLogo = logo_url || logo;
+
   return (
-    <div
-      className="card-elevated p-4 cursor-pointer flex gap-4"
-      onClick={onClick}
-    >
-      {/* Logo */}
-      <div className="w-16 h-16 rounded-xl bg-secondary flex items-center justify-center overflow-hidden shrink-0">
-        <img src={logo} alt={name} className="w-12 h-12 object-contain" />
+    <div className="bg-card border border-border rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex items-center justify-between gap-4">
+      <div className="flex items-center gap-3.5">
+        <div className="relative w-12 h-12 rounded-xl bg-secondary flex items-center justify-center overflow-hidden shrink-0 border border-border">
+          {displayLogo ? (
+            <img src={displayLogo} alt={name} className="w-full h-full object-cover" />
+          ) : (
+            <img src={displayImage} alt={name} className="w-full h-full object-cover" />
+          )}
+        </div>
+        <div>
+          <h3 className="font-semibold text-foreground text-base line-clamp-1">{name}</h3>
+          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 line-clamp-1">
+            <MapPin className="w-3 h-3 text-muted-foreground shrink-0" />
+            {address || city || "Rosario"}
+          </p>
+        </div>
       </div>
 
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="font-semibold text-foreground truncate">{name}</h3>
-          <span
-            className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
-              isOpen
-                ? "bg-primary-light text-primary"
-                : "bg-destructive/10 text-destructive"
-            }`}
-          >
-            {isOpen ? "Abierto" : "Cerrado"}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <Star className="w-4 h-4 fill-accent text-accent" />
-            <span>{rating.toFixed(1)}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <MapPin className="w-4 h-4" />
-            <span>{distance}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Clock className="w-4 h-4" />
-            <span>{productsCount} productos</span>
-          </div>
-        </div>
-
-        <p className="text-sm text-muted-foreground mt-1 truncate">{address}</p>
-      </div>
+      {distNumber !== null && (
+        <Badge variant="secondary" className="shrink-0 flex items-center gap-1 font-medium bg-primary/10 text-primary hover:bg-primary/20 border-none px-2.5 py-1">
+          <Navigation className="w-3 h-3" />
+          {distNumber.toFixed(1)} km
+        </Badge>
+      )}
     </div>
   );
 };

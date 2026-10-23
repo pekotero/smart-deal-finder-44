@@ -1,150 +1,178 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { calculateDistanceKm } from "@/hooks/useGeolocation";
 
-export interface PriceInfo {
-  store: string;
+export interface PriceComparison {
+  id: string;
   price: number;
   originalPrice?: number;
-  logo: string;
-  storeId: string;
-  distance?: string;
-  distanceKm?: number;
+  store: string;
+  storeName: string;
+  store_id?: string;
+  distance?: number;
 }
 
 export interface Product {
   id: string;
   name: string;
-  description: string | null;
   image: string;
+  image_url?: string;
   category: string;
-  categoryId: string;
-  prices: PriceInfo[];
+  ean?: string;
+  prices: PriceComparison[];
+  bestPrice?: number;
+  savingsPercentage?: number;
 }
 
-interface UseProductsOptions {
-  categoryId?: string;
-  searchQuery?: string;
+export interface UseProductsOptions {
+  categoryId?: string | null;
+  searchQuery?: string | null;
   userLatitude?: number | null;
   userLongitude?: number | null;
   maxDistanceKm?: number;
   cityId?: string | null;
 }
 
-export const useProducts = (options?: UseProductsOptions) => {
-  const { 
-    categoryId, 
-    searchQuery, 
-    userLatitude, 
-    userLongitude, 
-    maxDistanceKm = 500,
-    cityId,
-  } = options || {};
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+}
 
-  return useQuery({
-    queryKey: ["products", categoryId, searchQuery, userLatitude, userLongitude, maxDistanceKm, cityId],
-    queryFn: async () => {
-      let query = supabase
-        .from("products")
-        .select(`
-          id,
-          name,
-          description,
-          image_url,
-          category_id,
-          categories (
-            id,
-            name
-          ),
-          prices (
-            id,
-            price,
-            original_price,
-            store_id,
-            stores (
-              id,
-              name,
-              logo_url,
-              latitude,
-              longitude
-            )
-          )
-        `);
+export const useProducts = (
+  optsOrSearchQuery?: UseProductsOptions | string | null,
+  categoryParam?: string | null
+) => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<any>(null);
 
-      if (categoryId && categoryId !== "all") {
-        query = query.eq("category_id", categoryId);
-      }
+  let searchQuery = "";
+  let categoryId = "all";
+  let userLatitude: number | null = null;
+  let userLongitude: number | null = null;
 
-      if (searchQuery && searchQuery.trim()) {
-        query = query.ilike("name", `%${searchQuery}%`);
-      }
+  if (typeof optsOrSearchQuery === "object" && optsOrSearchQuery !== null) {
+    searchQuery = optsOrSearchQuery.searchQuery || "";
+    categoryId = optsOrSearchQuery.categoryId || "all";
+    userLatitude = optsOrSearchQuery.userLatitude ?? null;
+    userLongitude = optsOrSearchQuery.userLongitude ?? null;
+  } else {
+    searchQuery = typeof optsOrSearchQuery === "string" ? optsOrSearchQuery : "";
+    categoryId = categoryParam || "all";
+  }
 
-      const { data, error } = await query;
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setLoading(true);
 
-      if (error) throw error;
+        const { data: rawProducts, error: fetchErr } = await supabase
+          .from("products")
+          .select("*, prices(*, stores(*))");
 
-      const products: Product[] = (data || []).map((product: any) => {
-        let prices: PriceInfo[] = (product.prices || [])
-          .map((p: any) => {
-            const currentPrice = Number(p.price);
-            const rawOriginalPrice = p.original_price ? Number(p.original_price) : 0;
+        if (fetchErr) throw fetchErr;
 
-            // FILTRO RADICAL: Si el precio tachado es más del doble del actual 
-            // o si es mayor a 50.000 para un producto común, lo ignoramos.
-            let cleanOriginalPrice: number | undefined = undefined;
-            if (rawOriginalPrice > currentPrice && rawOriginalPrice < currentPrice * 2) {
-              cleanOriginalPrice = rawOriginalPrice;
+        let mapped: Product[] = (rawProducts || []).map((p: any) => {
+          const rawPrices = p.prices || [];
+          const chainPriceMap = new Map<string, PriceComparison>();
+
+          rawPrices.forEach((pr: any) => {
+            const storeObj = pr.stores || {};
+            const storeName = storeObj.name || "Supermercado";
+            
+            let chainName = "Supermercado";
+            const lower = storeName.toLowerCase();
+            if (lower.includes("coto")) chainName = "Coto";
+            else if (lower.includes("carrefour")) chainName = "Carrefour";
+            else if (lower.includes("jumbo")) chainName = "Jumbo";
+            else if (lower.includes("gallega")) chainName = "La Gallega";
+            else if (lower.includes("reina")) chainName = "La Reina";
+            else chainName = storeName;
+
+            let dist: number | undefined = undefined;
+            if (
+              typeof userLatitude === "number" &&
+              typeof userLongitude === "number" &&
+              typeof storeObj.latitude === "number" &&
+              typeof storeObj.longitude === "number"
+            ) {
+              dist = calculateDistance(userLatitude, userLongitude, storeObj.latitude, storeObj.longitude);
             }
 
-            const storeLat = p.stores?.latitude ? Number(p.stores.latitude) : null;
-            const storeLng = p.stores?.longitude ? Number(p.stores.longitude) : null;
-            
-            let distanceKm: number | undefined;
-            let distanceString = "Online";
-            
-            if (userLatitude && userLongitude && storeLat && storeLng) {
-              distanceKm = calculateDistanceKm(userLatitude, userLongitude, storeLat, storeLng);
-              distanceString = `${distanceKm.toFixed(1)} km`;
-            }
-            
-            return {
-              store: p.stores?.name || "Tienda",
-              price: currentPrice,
-              originalPrice: cleanOriginalPrice, // Pasamos el precio limpio
-              logo: p.stores?.logo_url || "",
-              storeId: p.store_id,
-              distance: distanceString,
-              distanceKm,
-              storeLat,
-              storeLng,
+            const currentPrice: PriceComparison = {
+              id: pr.id,
+              price: Number(pr.price),
+              originalPrice: pr.original_price ? Number(pr.original_price) : undefined,
+              store: chainName,
+              storeName: chainName,
+              store_id: pr.store_id,
+              distance: dist
             };
+
+            if (!chainPriceMap.has(chainName) || currentPrice.price < chainPriceMap.get(chainName)!.price) {
+              chainPriceMap.set(chainName, currentPrice);
+            }
           });
 
-        if (userLatitude && userLongitude) {
-          prices = prices.filter((p: any) => {
-            if (!p.storeLat || !p.storeLng) return true;
-            return p.distanceKm !== undefined && p.distanceKm <= maxDistanceKm;
-          });
+          const deduplicatedPrices = Array.from(chainPriceMap.values()).sort((a, b) => a.price - b.price);
+
+          let bestPrice = deduplicatedPrices.length > 0 ? deduplicatedPrices[0].price : undefined;
+          let savingsPercentage = 0;
+
+          if (deduplicatedPrices.length > 1) {
+            const highestPrice = deduplicatedPrices[deduplicatedPrices.length - 1].price;
+            if (highestPrice > 0 && bestPrice) {
+              savingsPercentage = Math.round(((highestPrice - bestPrice) / highestPrice) * 100);
+            }
+          }
+
+          return {
+            id: p.id,
+            name: p.name,
+            image: p.image_url || p.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&q=80",
+            image_url: p.image_url || p.image,
+            category: p.category || "Almacén",
+            ean: p.ean,
+            prices: deduplicatedPrices,
+            bestPrice,
+            savingsPercentage
+          };
+        });
+
+        if (searchQuery.trim() !== "") {
+          const q = searchQuery.toLowerCase().trim();
+          mapped = mapped.filter((p) => p.name.toLowerCase().includes(q));
         }
 
-        // Ordenar por precio
-        prices = prices.sort((a, b) => a.price - b.price);
+        if (categoryId && categoryId !== "all" && categoryId !== "Todas") {
+          mapped = mapped.filter((p) => p.category.toLowerCase() === categoryId.toLowerCase());
+        }
 
-        return {
-          id: product.id,
-          name: product.name,
-          description: product.description,
-          image: product.image_url || "",
-          category: product.categories?.name || "Sin categoría",
-          categoryId: product.category_id,
-          prices,
-        };
-      });
+        setProducts(mapped);
+      } catch (err: any) {
+        console.error("Error cargando productos:", err.message);
+        setError(err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-      return products.filter(p => p.prices.length > 0);
-    },
-    // Esto fuerza a que no use caché viejo y pida datos nuevos
-    staleTime: 0,
-    gcTime: 0,
-  });
+    fetchProducts();
+  }, [searchQuery, categoryId, userLatitude, userLongitude]);
+
+  return {
+    data: products,
+    products,
+    isLoading: loading,
+    loading,
+    error
+  };
 };

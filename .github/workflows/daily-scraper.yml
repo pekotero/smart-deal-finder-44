@@ -1,0 +1,29 @@
+name: Actualización diaria de precios
+
+on:
+  schedule:
+    # Todos los días a las 09:00 UTC = 06:00 Argentina
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Ejecutar scraper de precios
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: npx tsx scraper/scrape-prices-all.ts

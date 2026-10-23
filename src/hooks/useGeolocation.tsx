@@ -1,11 +1,16 @@
 import { useState, useEffect } from "react";
 
-interface GeolocationState {
+export interface GeolocationState {
   latitude: number | null;
   longitude: number | null;
   error: string | null;
   loading: boolean;
 }
+
+const ROSARIO_FALLBACK = {
+  latitude: -32.94682,
+  longitude: -60.63932,
+};
 
 export const useGeolocation = () => {
   const [state, setState] = useState<GeolocationState>({
@@ -17,69 +22,40 @@ export const useGeolocation = () => {
 
   useEffect(() => {
     if (!navigator.geolocation) {
-      setState((prev) => ({
-        ...prev,
-        error: "Tu navegador no soporta geolocalización",
+      setState({
+        latitude: ROSARIO_FALLBACK.latitude,
+        longitude: ROSARIO_FALLBACK.longitude,
+        error: "Geolocalización no soportada por el navegador",
         loading: false,
-      }));
+      });
       return;
     }
 
-    const success = (position: GeolocationPosition) => {
-      setState({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        error: null,
-        loading: false,
-      });
-    };
-
-    const error = (err: GeolocationPositionError) => {
-      let errorMessage = "Error al obtener ubicación";
-      switch (err.code) {
-        case err.PERMISSION_DENIED:
-          errorMessage = "Permiso de ubicación denegado";
-          break;
-        case err.POSITION_UNAVAILABLE:
-          errorMessage = "Ubicación no disponible";
-          break;
-        case err.TIMEOUT:
-          errorMessage = "Tiempo de espera agotado";
-          break;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setState({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          error: null,
+          loading: false,
+        });
+      },
+      (error) => {
+        console.warn("Ubicación GPS no disponible o rechazada. Usando Rosario:", error.message);
+        setState({
+          latitude: ROSARIO_FALLBACK.latitude,
+          longitude: ROSARIO_FALLBACK.longitude,
+          error: error.message,
+          loading: false,
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
       }
-      setState((prev) => ({
-        ...prev,
-        error: errorMessage,
-        loading: false,
-      }));
-    };
-
-    navigator.geolocation.getCurrentPosition(success, error, {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0,
-    });
+    );
   }, []);
 
   return state;
-};
-
-// Calculate distance between two coordinates in km
-export const calculateDistanceKm = (
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number => {
-  const R = 6371; // Earth's radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
 };

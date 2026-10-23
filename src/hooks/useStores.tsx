@@ -1,19 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { calculateDistanceKm } from "@/hooks/useGeolocation";
 
 export interface Store {
   id: string;
   name: string;
-  logo: string;
-  address: string;
-  rating: number;
-  distance: string;
-  isOpen: boolean;
-  productsCount: number;
-  latitude: number | null;
-  longitude: number | null;
-  calculatedDistanceKm?: number;
+  address?: string;
+  city?: string;
+  latitude?: number;
+  longitude?: number;
+  distance?: number;
+  distanceKm?: number;
+  image_url?: string;
+  logo_url?: string;
 }
 
 interface UseStoresOptions {
@@ -23,79 +21,81 @@ interface UseStoresOptions {
   cityId?: string | null;
 }
 
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371; // Radio de la Tierra en km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+};
+
 export const useStores = (options?: UseStoresOptions) => {
-  const { userLatitude, userLongitude, maxDistanceKm = 500, cityId } = options || {};
+  const [data, setData] = useState<Store[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<any>(null);
 
-  return useQuery({
-    queryKey: ["stores", userLatitude, userLongitude, maxDistanceKm, cityId],
-    queryFn: async () => {
-      let query = supabase
-        .from("stores")
-        .select("*")
-        .order("rating", { ascending: false });
+  useEffect(() => {
+    const fetchStores = async () => {
+      try {
+        setIsLoading(true);
+        let query = supabase.from("stores").select("*");
 
-      if (cityId) {
-        query = query.eq("city_id", cityId);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
-      let stores: Store[] = (data || []).map((store) => {
-        const lat = store.latitude ? Number(store.latitude) : null;
-        const lng = store.longitude ? Number(store.longitude) : null;
-        
-        // Calculate real distance if user location is available
-        let calculatedDistanceKm: number | undefined;
-        let distanceString = "Online";
-        
-        if (userLatitude && userLongitude && lat && lng) {
-          calculatedDistanceKm = calculateDistanceKm(
-            userLatitude,
-            userLongitude,
-            lat,
-            lng
-          );
-          distanceString = `${calculatedDistanceKm.toFixed(1)} km`;
-        } else if (lat && lng) {
-          distanceString = "Ubicación disponible";
+        if (options?.cityId) {
+          query = query.eq("city_id", options.cityId);
         }
 
-        return {
-          id: store.id,
-          name: store.name,
-          logo: store.logo_url || "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=100&h=100&fit=crop",
-          address: store.address || "Dirección no disponible",
-          rating: Number(store.rating) || 4.0,
-          distance: distanceString,
-          isOpen: store.is_open ?? true,
-          productsCount: store.products_count || 0,
-          latitude: lat,
-          longitude: lng,
-          calculatedDistanceKm,
-        };
-      });
+        const { data: storesData, error: storesError } = await query;
+        if (storesError) throw storesError;
 
-      // If user location is available, filter and sort by distance
-      if (userLatitude && userLongitude) {
-        stores = stores
-          .filter((store) => {
-            // Include online stores (no location)
-            if (!store.latitude || !store.longitude) return true;
-            // Include stores within max distance
-            return store.calculatedDistanceKm !== undefined && 
-                   store.calculatedDistanceKm <= maxDistanceKm;
-          })
-          .sort((a, b) => {
-            // Online stores go to the end
-            if (!a.calculatedDistanceKm) return 1;
-            if (!b.calculatedDistanceKm) return -1;
-            return a.calculatedDistanceKm - b.calculatedDistanceKm;
-          });
+        let processedStores: Store[] = (storesData || []).map((s) => {
+          let dist: number | undefined = undefined;
+          if (
+            typeof options?.userLatitude === "number" &&
+            typeof options?.userLongitude === "number" &&
+            typeof s.latitude === "number" &&
+            typeof s.longitude === "number"
+          ) {
+            dist = calculateDistance(
+              options.userLatitude,
+              options.userLongitude,
+              s.latitude,
+              s.longitude
+            );
+          }
+          return {
+            ...s,
+            distance: dist,
+            distanceKm: dist,
+          };
+        });
+
+        // Filtrar por distancia máxima solo si hay GPS disponible
+        if (options?.maxDistanceKm && typeof options?.userLatitude === "number" && typeof options?.userLongitude === "number") {
+          processedStores = processedStores.filter(
+            (s) => s.distance === undefined || s.distance <= options.maxDistanceKm!
+          );
+        }
+
+        // Ordenar por cercanía
+        processedStores.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
+
+        setData(processedStores);
+      } catch (err) {
+        console.error("Error al cargar tiendas:", err);
+        setError(err);
+      } finally {
+        setIsLoading(false);
       }
+    };
 
-      return stores;
-    },
-  });
+    fetchStores();
+  }, [options?.userLatitude, options?.userLongitude, options?.maxDistanceKm, options?.cityId]);
+
+  return { data, isLoading, error };
 };

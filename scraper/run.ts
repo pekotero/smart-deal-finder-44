@@ -1,4 +1,5 @@
 import { scrapeAll } from './vtex-scraper.js';
+import { scrapeCoto } from './coto-scraper.js';
 
 const QUERIES = [
   // Bebidas
@@ -31,16 +32,24 @@ const QUERIES = [
   'papel higienico'
 ];
 
-console.log('Smart Deal Finder - Scraper Extendido');
-console.log(new Date().toLocaleString('es-AR'));
-console.log(`${QUERIES.length} búsquedas programadas\n`);
+async function main() {
+  console.log('Smart Deal Finder - Scraper Multicadena');
+  console.log(new Date().toLocaleString('es-AR'));
+  console.log(`${QUERIES.length} búsquedas programadas\n`);
 
-scrapeAll(QUERIES)
-  .then(() => {
+  try {
+    // 1. Escanear Coto Digital PRIMERO
+    await scrapeCoto(QUERIES);
+
+    // 2. Escanear cadenas VTEX (Carrefour, Jumbo) después
+    await scrapeAll(QUERIES);
+
     console.log('\n========================================');
     console.log('¡Escaneo completo finalizado con éxito!');
     console.log('========================================');
-  })
-  .catch((err) => {
+  } catch (err) {
     console.error('Error durante el escaneo:', err);
-  });
+  }
+}
+
+main();

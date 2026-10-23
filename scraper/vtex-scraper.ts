@@ -1,230 +1,181 @@
 import { createClient } from '@supabase/supabase-js';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('❌ ERROR FATAL: No se encontraron las credenciales SUPABASE_URL o SUPABASE_SERVICE_KEY.');
-  process.exit(1);
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY!
+);
+
+interface VTEXStoreConfig {
+  name: string;
+  baseUrl: string;
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const STORES: VTEXStoreConfig[] = [
+  { name: 'Carrefour', baseUrl: 'www.carrefour.com.ar' },
+  { name: 'Jumbo', baseUrl: 'www.jumbo.com.ar' },
+];
 
-const STORES: Record<string, string> = {
-  carrefour: 'www.carrefour.com.ar',
-  jumbo: 'www.jumbo.com.ar',
-  disco: 'www.disco.com.ar',
-};
-
-// Mapa de búsquedas a nombres de categorías
-function getCategoryName(query: string): string {
-  const q = query.toLowerCase();
-  if (['coca cola', 'pepsi', 'sprite', 'agua mineral', 'cerveza', 'jugo', 'gaseosa'].some(k => q.includes(k))) {
-    return 'Bebidas';
-  }
-  if (['leche', 'yogur', 'manteca', 'queso', 'crema'].some(k => q.includes(k))) {
-    return 'Lácteos';
-  }
-  if (['lavandina', 'detergente', 'jabon', 'papel higienico', 'limpiador'].some(k => q.includes(k))) {
-    return 'Limpieza';
-  }
-  return 'Almacén';
+function cleanProductName(rawName: string): string {
+  return rawName
+    .replace(/\b(gaseosa|sabor|original|zero|diet|lt|lts|l|ml|cc|gr|g|kg)\b/gi, '')
+    .replace(/[^\w\s]/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
-// Caché de categorías para no saturar la base de datos
-const categoryCache: Record<string, string> = {};
-
-async function getOrCreateCategoryId(categoryName: string): Promise<string | null> {
-  if (categoryCache[categoryName]) {
-    return categoryCache[categoryName];
-  }
-
-  const { data: existing } = await supabase
-    .from('categories')
-    .select('id')
-    .ilike('name', categoryName)
-    .maybeSingle();
-
-  if (existing) {
-    categoryCache[categoryName] = existing.id;
-    return existing.id;
-  }
-
-  const { data: created, error } = await supabase
-    .from('categories')
-    .insert({
-      name: categoryName,
-      slug: categoryName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
-      icon: categoryName === 'Bebidas' ? 'cup-soda' : categoryName === 'Lácteos' ? 'milk' : categoryName === 'Limpieza' ? 'sparkles' : 'shopping-bag'
-    })
-    .select('id')
-    .single();
-
-  if (created) {
-    categoryCache[categoryName] = created.id;
-    return created.id;
-  }
-
-  if (error) {
-    console.error(`Error al crear categoría ${categoryName}:`, error.message);
-  }
-
-  return null;
+async function getCategoryMap() {
+  const { data } = await supabase.from('categories').select('id, name');
+  const map: Record<string, string> = {};
+  data?.forEach(c => map[c.name.toLowerCase()] = c.id);
+  return map;
 }
 
-interface VTEXProduct {
-  productId: string;
-  productName: string;
-  brand: string;
-  linkText: string;
-  items: {
-    itemId: string;
-    ean: string;
-    images: { imageUrl: string }[];
-    sellers: {
-      commertialOffer: {
-        Price: number;
-        ListPrice: number;
-        AvailableQuantity: number;
-      };
-    }[];
-  }[];
-}
-
-async function search(storeKey: string, query: string): Promise<VTEXProduct[]> {
-  const domain = STORES[storeKey];
-  const url = `https://${domain}/api/catalog_system/pub/products/search/${encodeURIComponent(query)}?max=15`;
-
-  console.log(`  🔍 Buscando "${query}" en ${storeKey.toUpperCase()}...`);
-
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-    });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch {
-    console.log(`  ❌ Error conectando a ${storeKey}`);
-    return [];
+function mapCategoryId(productName: string, catMap: Record<string, string>): string | null {
+  const lower = productName.toLowerCase();
+  if (lower.includes('leche') || lower.includes('yogur') || lower.includes('queso') || lower.includes('crema') || lower.includes('manteca')) {
+    return catMap['lácteos'] || catMap['lacteos'] || null;
   }
+  if (lower.includes('gaseosa') || lower.includes('coca') || lower.includes('pepsi') || lower.includes('sprite') || lower.includes('agua') || lower.includes('cerveza') || lower.includes('vino') || lower.includes('jugo')) {
+    return catMap['bebidas'] || null;
+  }
+  if (lower.includes('detergente') || lower.includes('lavandina') || lower.includes('jabón') || lower.includes('jabon') || lower.includes('limpieza') || lower.includes('desinfectante')) {
+    return catMap['limpieza'] || null;
+  }
+  return catMap['almacén'] || catMap['almacen'] || null;
 }
 
-async function saveProductAndPrices(vtexProduct: VTEXProduct, storeKey: string, query: string) {
-  const { data: stores } = await supabase
+async function scrapeStore(storeConfig: VTEXStoreConfig, queries: string[], catMap: Record<string, string>) {
+  console.log(`\n========================================`);
+  console.log(`🛒 ESCANEANDO: ${storeConfig.name.toUpperCase()}`);
+  console.log(`========================================`);
+
+  const { data: store } = await supabase
     .from('stores')
     .select('id')
-    .eq('chain', storeKey);
+    .ilike('name', `%${storeConfig.name}%`)
+    .limit(1)
+    .maybeSingle();
 
-  if (!stores || stores.length === 0) return;
+  if (!store) {
+    console.error(`❌ Error: No se encontró la tienda "${storeConfig.name}" en Supabase.`);
+    return;
+  }
 
-  const categoryName = getCategoryName(query);
-  const categoryId = await getOrCreateCategoryId(categoryName);
+  for (const query of queries) {
+    console.log(`  🔍 Buscando "${query}" en ${storeConfig.name}...`);
 
-  for (const item of vtexProduct.items) {
-    const seller = item.sellers[0];
-    if (!seller || seller.commertialOffer.AvailableQuantity === 0) continue;
+    try {
+      const url = `https://${storeConfig.baseUrl}/api/catalog_system/pub/products/search/${encodeURIComponent(query)}?_from=0&_to=24`;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'application/json'
+        }
+      });
 
-    const price = seller.commertialOffer.Price;
-    const rawListPrice = seller.commertialOffer.ListPrice;
-
-    const validOriginalPrice = (rawListPrice > price && rawListPrice <= price * 2.5) 
-      ? rawListPrice 
-      : null;
-
-    const img = item.images[0]?.imageUrl?.replace('http://', 'https://') || null;
-    const eanCode = item.ean && item.ean.length >= 8 ? item.ean : null;
-
-    let productId: string | null = null;
-
-    if (eanCode) {
-      const { data: eanMatch } = await supabase
-        .from('products')
-        .select('id')
-        .eq('ean', eanCode)
-        .maybeSingle();
-
-      if (eanMatch) {
-        productId = eanMatch.id;
-      }
-    }
-
-    if (!productId) {
-      const { data: nameMatch } = await supabase
-        .from('products')
-        .select('id')
-        .ilike('name', vtexProduct.productName)
-        .maybeSingle();
-
-      if (nameMatch) {
-        productId = nameMatch.id;
-      }
-    }
-
-    if (!productId) {
-      const { data: created, error } = await supabase
-        .from('products')
-        .insert({
-          name: vtexProduct.productName,
-          brand: vtexProduct.brand || null,
-          image_url: img,
-          ean: eanCode,
-          category_id: categoryId,
-          is_user_contributed: false,
-        })
-        .select('id')
-        .single();
-
-      if (created) {
-        productId = created.id;
-        console.log(`    ✨ Nuevo producto: ${vtexProduct.productName} [${categoryName}]`);
-      } else if (error) {
-        console.error(`    ⚠️ Error al crear producto:`, error.message);
+      if (!response.ok) {
+        console.error(`    ❌ Error HTTP ${response.status} en ${storeConfig.name}`);
         continue;
       }
-    } else {
-      if (categoryId) {
-        await supabase
-          .from('products')
-          .update({ category_id: categoryId })
-          .eq('id', productId);
+
+      const products = await response.json();
+      if (!Array.isArray(products) || products.length === 0) {
+        console.log(`    ⚠️ Sin resultados para "${query}"`);
+        continue;
       }
-      console.log(`    🔗 Coincidencia encontrada! Agrupando precio para: ${vtexProduct.productName}`);
+
+      let inserted = 0;
+
+      for (const item of products) {
+        const sku = item.items?.[0];
+        const offer = sku?.sellers?.[0]?.commertialOffer;
+        const price = offer?.Price;
+        const listPrice = offer?.ListPrice || price;
+
+        if (!price || price <= 0) continue;
+
+        const rawName = item.productName || sku?.nameComplete || '';
+        const brand = item.brand || rawName.split(' ')[0];
+        const imageUrl = sku?.images?.[0]?.imageUrl || '';
+        const ean = sku?.ean || null;
+
+        if (!rawName) continue;
+
+        const category_id = mapCategoryId(rawName, catMap);
+
+        // Agrupación por EAN o Nombre Limpio
+        let productId: string | null = null;
+
+        if (ean) {
+          const { data: byEan } = await supabase
+            .from('products')
+            .select('id')
+            .eq('ean', ean)
+            .maybeSingle();
+          if (byEan) productId = byEan.id;
+        }
+
+        if (!productId) {
+          const { data: byName } = await supabase
+            .from('products')
+            .select('id')
+            .ilike('name', `%${cleanProductName(rawName)}%`)
+            .limit(1)
+            .maybeSingle();
+          if (byName) productId = byName.id;
+        }
+
+        if (!productId) {
+          const { data: newProd, error: insertProdErr } = await supabase
+            .from('products')
+            .insert({
+              name: rawName,
+              brand: brand,
+              image_url: imageUrl,
+              category_id: category_id,
+              ...(ean ? { ean } : {})
+            })
+            .select('id')
+            .single();
+
+          if (insertProdErr || !newProd) continue;
+          productId = newProd.id;
+        }
+
+        // Actualizar precio de la cadena
+        await supabase.from('prices').delete().eq('product_id', productId).eq('store_id', store.id);
+
+        const { error: priceError } = await supabase.from('prices').insert({
+          product_id: productId,
+          store_id: store.id,
+          price: price,
+          original_price: listPrice
+        });
+
+        if (!priceError) inserted++;
+      }
+
+      console.log(`    ✅ Guardados ${inserted}/${products.length} productos para "${query}"`);
+
+    } catch (e) {
+      console.error(`    ❌ Error buscando "${query}":`, e);
     }
 
-    if (!productId) continue;
-
-    for (const store of stores) {
-      await supabase
-        .from('prices')
-        .delete()
-        .eq('product_id', productId)
-        .eq('store_id', store.id);
-
-      await supabase.from('prices').insert({
-        product_id: productId,
-        store_id: store.id,
-        price,
-        original_price: validOriginalPrice,
-        source: 'scraped',
-        verified: true,
-        last_updated: new Date().toISOString(),
-      });
-    }
+    await new Promise(resolve => setTimeout(resolve, 800));
   }
 }
 
 export async function scrapeAll(queries: string[]) {
-  for (const storeKey of Object.keys(STORES)) {
-    console.log(`\n========================================`);
-    console.log(`🛒 ESCANEANDO: ${storeKey.toUpperCase()}`);
-    console.log(`========================================`);
-    for (const q of queries) {
-      const products = await search(storeKey, q);
-      for (const p of products) {
-        await saveProductAndPrices(p, storeKey, q);
-      }
-      await new Promise((r) => setTimeout(r, 800));
-    }
+  const catMap = await getCategoryMap();
+  for (const storeConfig of STORES) {
+    await scrapeStore(storeConfig, queries, catMap);
   }
 }
