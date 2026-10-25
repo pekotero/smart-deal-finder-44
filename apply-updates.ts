@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-console.log("🚀 Corrigiendo flujo de GitHub Actions para dependencias de scraper...");
+console.log("🚀 Corrigiendo flujo de GitHub Actions con working-directory...");
 
 const workflowContent = `name: Actualización diaria de precios
 
@@ -27,15 +27,14 @@ jobs:
       - name: Instalar dependencias
         run: |
           npm install
-          cd scraper && npm install
+          npm --prefix scraper install
 
       - name: Ejecutar scraper de precios
+        working-directory: ./scraper
         env:
           SUPABASE_URL: \${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: \${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: |
-          cd scraper
-          npx tsx scrape-prices-all.ts
+        run: npx tsx scrape-prices-all.ts
 `;
 
 const workflowDir = path.join(process.cwd(), ".github", "workflows");
@@ -49,4 +48,4 @@ fs.writeFileSync(
   "utf-8"
 );
 
-console.log("✅ Flujo .github/workflows/daily-scraper.yml actualizado correctamente.");
+console.log("✅ Workflow .github/workflows/daily-scraper.yml corregido.");

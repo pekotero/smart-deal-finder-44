@@ -22,12 +22,11 @@ jobs:
       - name: Instalar dependencias
         run: |
           npm install
-          cd scraper && npm install
+          npm --prefix scraper install
 
       - name: Ejecutar scraper de precios
+        working-directory: ./scraper
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: |
-          cd scraper
-          npx tsx scrape-prices-all.ts
+        run: npx tsx scrape-prices-all.ts
