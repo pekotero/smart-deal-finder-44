@@ -1,33 +1,52 @@
 import fs from "fs";
 import path from "path";
 
-console.log("🚀 Cambiando título y favicon de la aplicación...");
+console.log("🚀 Corrigiendo flujo de GitHub Actions para dependencias de scraper...");
 
-const indexHtmlContent = `<!DOCTYPE html>
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Smart Deal Finder - Compará Precios de Supermercados</title>
-    <meta name="description" content="Compará precios en tiempo real entre Coto, Carrefour, Jumbo y más en Rosario y toda Argentina." />
-    <meta name="author" content="Smart Deal Finder" />
+const workflowContent = `name: Actualización diaria de precios
 
-    <!-- Icono de la pestaña del navegador (Changuito de Compras) -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛒</text></svg>" />
+on:
+  schedule:
+    # Todos los días a las 09:00 UTC (06:00 AM Argentina)
+    - cron: "0 9 * * *"
+  workflow_dispatch:
 
-    <!-- Estilos de Leaflet para el Mapa -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-         crossorigin=""/>
-  </head>
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
 
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias
+        run: |
+          npm install
+          cd scraper && npm install
+
+      - name: Ejecutar scraper de precios
+        env:
+          SUPABASE_URL: \${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: \${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd scraper
+          npx tsx scrape-prices-all.ts
 `;
 
-fs.writeFileSync(path.join(process.cwd(), "index.html"), indexHtmlContent, "utf-8");
+const workflowDir = path.join(process.cwd(), ".github", "workflows");
+if (!fs.existsSync(workflowDir)) {
+  fs.mkdirSync(workflowDir, { recursive: true });
+}
 
-console.log("✅ index.html actualizado con el nombre 'Smart Deal Finder' e icono 🛒");
+fs.writeFileSync(
+  path.join(workflowDir, "daily-scraper.yml"),
+  workflowContent,
+  "utf-8"
+);
+
+console.log("✅ Flujo .github/workflows/daily-scraper.yml actualizado correctamente.");
