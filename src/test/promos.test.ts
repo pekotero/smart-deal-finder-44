@@ -94,6 +94,14 @@ describe("bestPromoForStore", () => {
     expect(bestPromoForStore(promos, "Carrefour Market", filters)?.promo.descuento).toBe(15);
   });
 
+  it("a igual descuento prefiere la promo propia de la cadena", () => {
+    const promos = [
+      promo({ medio: "Galicia", cadena: "Todas", descuento: 20 }),
+      promo({ medio: "Mercado Pago", cadena: "Carrefour", descuento: 20 }),
+    ];
+    expect(bestPromoForStore(promos, "Carrefour Market", filters)?.promo.medio).toBe("Mercado Pago");
+  });
+
   it("avisa cuánto falta para la compra mínima", () => {
     const promos = [promo({ minimo_compra: 20000 })];
     const r = bestPromoForStore(promos, "Carrefour", filters, 15000);

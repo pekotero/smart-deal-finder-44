@@ -102,7 +102,11 @@ export function bestPromoForStore(
   for (const p of activePromos(promos, filters)) {
     if (p.online === true || !chainOk(p, storeName)) continue;
     if (total == null) {
-      if (!best || (p.descuento ?? 0) > (best.promo.descuento ?? 0)) best = { promo: p, save: null };
+      const d = p.descuento ?? 0;
+      const bestD = best?.promo.descuento ?? 0;
+      // A igual descuento gana la promo propia de la cadena sobre una de "Todas" (cualquier súper).
+      const moreSpecific = best && norm(best.promo.cadena) === "todas" && norm(p.cadena) !== "todas";
+      if (!best || d > bestD || (d === bestD && moreSpecific)) best = { promo: p, save: null };
       continue;
     }
     if (p.minimo_compra && total < p.minimo_compra) {
