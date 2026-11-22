@@ -71,6 +71,8 @@ export const usePromoPrefs = (allMedios: string[]) => {
   const toggleMedio = (m: string) =>
     save({ ...prefs, medios: medios.includes(m) ? medios.filter((x) => x !== m) : [...medios, m] });
   const setDay = (d: string) => save({ ...prefs, day: d === today() ? null : d });
+  // null = todos (así también entran los medios nuevos que se carguen después).
+  const setAll = (all: boolean) => save({ ...prefs, medios: all ? null : [] });
 
-  return { medios, day, toggleMedio, setDay };
+  return { medios, day, toggleMedio, setDay, setAll };
 };

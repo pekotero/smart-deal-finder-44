@@ -76,7 +76,7 @@ const Promos = () => {
   const navigate = useNavigate();
   const { data: promos = [], isLoading, error } = useBankPromos();
   const allMedios = useMemo(() => [...new Set(promos.map((p) => p.medio))].sort(), [promos]);
-  const { medios, day, toggleMedio, setDay } = usePromoPrefs(allMedios);
+  const { medios, day, toggleMedio, setDay, setAll } = usePromoPrefs(allMedios);
   const [cadena, setCadena] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [withOnline, setWithOnline] = useState(true);
@@ -112,9 +112,19 @@ const Promos = () => {
       <main className="container py-6 flex flex-col gap-6">
         <section className="bg-card border border-border rounded-2xl p-4 flex flex-col gap-4">
           <div>
-            <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-primary" /> ¿Cómo pagás?
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-primary" /> ¿Cómo pagás?
+              </p>
+              <div className="flex gap-3 text-xs">
+                <button onClick={() => setAll(true)} className="text-primary hover:underline">
+                  Todos
+                </button>
+                <button onClick={() => setAll(false)} className="text-primary hover:underline">
+                  Ninguno
+                </button>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2 mt-2">
               {allMedios.map((m) => {
                 const on = medios.includes(m);
