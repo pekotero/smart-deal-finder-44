@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2, Plus } from "lucide-react";
 import Header from "@/components/Header";
@@ -23,8 +23,14 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { useBankPromos, usePromoPrefs } from "@/hooks/useBankPromos";
 import { bestPromoForStore } from "@/lib/promos";
 
+// Productos por página en el inicio. ALL = mostrar todos.
+const PAGE_SIZES = [50, 100, 200];
+const ALL = Number.MAX_SAFE_INTEGER;
+
 const Index = () => {
   const navigate = useNavigate();
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZES[0]);
   // Pestaña inicial desde la URL (la pestaña Promos vuelve con ?tab=map, ?tab=favorites...).
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get("tab") || "home";
@@ -111,6 +117,11 @@ const Index = () => {
 
   const displayProducts = activeTab === "favorites" ? favoriteProducts : products;
 
+  // Al cambiar de categoría, búsqueda o pestaña, la lista vuelve a la primera página.
+  useEffect(() => {
+    setVisibleCount(pageSize);
+  }, [activeCategory, debouncedSearchQuery, activeTab, pageSize]);
+
   return (
     <div className="min-h-screen bg-background pb-20 sm:pb-0">
       <Header
@@ -172,7 +183,7 @@ const Index = () => {
       {/* Products */}
       <section className="py-8">
         <div className="container">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
             <div>
               <h2 className="text-2xl font-bold text-foreground">
                 {activeTab === "favorites" ? "Tus favoritos" : "Mejores ofertas"}
@@ -180,11 +191,35 @@ const Index = () => {
               <p className="text-muted-foreground">
                 {activeTab === "favorites"
                   ? `${favoriteProducts.length} productos guardados`
-                  : debouncedSearchQuery 
+                  : debouncedSearchQuery
                     ? `Resultados para "${debouncedSearchQuery}"`
                     : "Comparamos precios para que ahorres"}
               </p>
             </div>
+            {displayProducts.length > PAGE_SIZES[0] && (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>
+                  Mostrando {Math.min(visibleCount, displayProducts.length)} de {displayProducts.length}
+                </span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    const size = Number(e.target.value);
+                    setPageSize(size);
+                    setVisibleCount(size);
+                  }}
+                  aria-label="Cantidad de productos por página"
+                  className="h-9 rounded-lg border border-border bg-card px-2 text-foreground"
+                >
+                  {PAGE_SIZES.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                  <option value={ALL}>Todos</option>
+                </select>
+              </label>
+            )}
           </div>
 
           {productsLoading ? (
@@ -203,7 +238,7 @@ const Index = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {displayProducts.map((product, index) => (
+              {displayProducts.slice(0, visibleCount).map((product, index) => (
                 <div
                   key={product.id}
                   className={`opacity-0 animate-fade-up stagger-${(index % 4) + 1}`}
@@ -219,6 +254,14 @@ const Index = () => {
                   />
                 </div>
               ))}
+            </div>
+          )}
+
+          {!productsLoading && visibleCount < displayProducts.length && (
+            <div className="flex justify-center mt-8">
+              <Button variant="outline" onClick={() => setVisibleCount((n) => n + pageSize)}>
+                Ver {Math.min(pageSize, displayProducts.length - visibleCount)} más
+              </Button>
             </div>
           )}
         </div>

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { cotoAvailable } from './price-rules';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -110,6 +111,8 @@ export async function scrapeCoto(queries: string[]) {
         if (!name || isNaN(priceNum) || priceNum <= 0) {
           continue;
         }
+        // Sin stock en ninguna sucursal: el precio publicado suele ser viejo.
+        if (!cotoAvailable(item.data)) continue;
 
         const category_id = mapCategoryId(name, catMap);
 
@@ -148,7 +151,7 @@ export async function scrapeCoto(queries: string[]) {
           product_id: productId,
           store_id: store.id,
           price: priceNum,
-          original_price: priceNum
+          original_price: null
         });
 
         if (priceError) {

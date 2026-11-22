@@ -3,6 +3,7 @@ import * as dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import { cotoAvailable, sanePreviousPrice, vtexAvailable } from "./price-rules";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,8 +52,9 @@ async function scrapeCoto(keyword) {
     const results = data.response?.results || [];
     for (const item of results) {
       const dataObj = item.data || {};
-      const price = Number(dataObj.product_list_price || dataObj.price || (dataObj.price && dataObj.price[0]?.listPrice));
+      const price = Number(dataObj.product_list_price || (Array.isArray(dataObj.price) && dataObj.price[0]?.listPrice));
       if (!price || isNaN(price) || price <= 0) continue;
+      if (!cotoAvailable(dataObj)) continue; // sin stock: precio viejo
       const name = item.value || dataObj.name || "";
       const ean = dataObj.gtin || dataObj.ean || dataObj.id;
       products.push({
@@ -80,13 +82,13 @@ async function scrapeCarrefour(keyword) {
       const seller = sku?.sellers?.[0]?.commertialOffer;
       const price = Number(seller?.Price);
       if (!price || isNaN(price) || price <= 0) continue;
+      if (!vtexAvailable(seller)) continue; // sin stock: precio viejo
       const name = item.productName || "";
       const ean = sku?.ean;
-      const originalPrice = Number(seller?.ListPrice);
       products.push({
         storeChain: "Carrefour", name, cleanName: sanitizeName(name),
         ean: ean ? String(ean) : undefined, price,
-        originalPrice: originalPrice && originalPrice > price ? originalPrice : undefined,
+        originalPrice: sanePreviousPrice(price, seller?.ListPrice) ?? undefined,
         imageUrl: sku?.images?.[0]?.imageUrl
       });
     }
@@ -109,13 +111,13 @@ async function scrapeJumbo(keyword) {
       const seller = sku?.sellers?.[0]?.commertialOffer;
       const price = Number(seller?.Price);
       if (!price || isNaN(price) || price <= 0) continue;
+      if (!vtexAvailable(seller)) continue; // sin stock: precio viejo
       const name = item.productName || "";
       const ean = sku?.ean;
-      const originalPrice = Number(seller?.ListPrice);
       products.push({
         storeChain: "Jumbo", name, cleanName: sanitizeName(name),
         ean: ean ? String(ean) : undefined, price,
-        originalPrice: originalPrice && originalPrice > price ? originalPrice : undefined,
+        originalPrice: sanePreviousPrice(price, seller?.ListPrice) ?? undefined,
         imageUrl: sku?.images?.[0]?.imageUrl
       });
     }

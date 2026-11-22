@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { sanePreviousPrice, vtexAvailable } from './price-rules';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,9 +99,11 @@ async function scrapeStore(storeConfig: VTEXStoreConfig, queries: string[], catM
         const sku = item.items?.[0];
         const offer = sku?.sellers?.[0]?.commertialOffer;
         const price = offer?.Price;
-        const listPrice = offer?.ListPrice || price;
 
         if (!price || price <= 0) continue;
+        // Sin stock: el precio publicado suele ser viejo.
+        if (!vtexAvailable(offer)) continue;
+        const listPrice = sanePreviousPrice(price, offer?.ListPrice);
 
         const rawName = item.productName || sku?.nameComplete || '';
         const brand = item.brand || rawName.split(' ')[0];
