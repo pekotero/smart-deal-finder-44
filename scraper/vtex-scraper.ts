@@ -61,7 +61,8 @@ async function scrapeStore(storeConfig: VTEXStoreConfig, queries: string[], catM
   const { data: store } = await supabase
     .from('stores')
     .select('id')
-    .ilike('name', `%${storeConfig.name}%`)
+    .ilike('name', `${storeConfig.name}%`) // que empiece con la cadena
+    .order('id')
     .limit(1)
     .maybeSingle();
 

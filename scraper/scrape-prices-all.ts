@@ -129,15 +129,15 @@ async function scrapeJumbo(keyword) {
 
 async function startPriceScraper() {
   console.log("Extrayendo precios de Coto, Carrefour y Jumbo...");
-  const { data: stores } = await supabase.from("stores").select("id, name");
-  if (!stores || stores.length === 0) {
-    console.error("No se encontraron tiendas en la base de datos.");
-    return;
+  // Una tienda por cadena, cuyo nombre empiece con la cadena. Antes se buscaba entre las primeras
+  // 1000 tiendas y, si no aparecía, se usaba la primera de la lista (de otra cadena).
+  const storeByChain = {};
+  for (const chain of ["Coto", "Carrefour", "Jumbo"]) {
+    const { data } = await supabase.from("stores").select("id").ilike("name", chain + "%").order("id").limit(1).maybeSingle();
+    if (data) storeByChain[chain] = data.id;
+    else console.warn("No se encontró tienda para " + chain + ": se saltean sus precios.");
   }
-  const getStoreIdForChain = (chain) => {
-    const matched = stores.find((s) => s.name.toLowerCase().includes(chain.toLowerCase()));
-    return matched ? matched.id : stores[0].id;
-  };
+  const getStoreIdForChain = (chain) => storeByChain[chain] || null;
   let totalItemsScraped = 0;
   for (const keyword of SEARCH_KEYWORDS) {
     console.log("Buscando ofertas para: " + keyword + "...");

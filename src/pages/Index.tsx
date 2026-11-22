@@ -1,10 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import Header from "@/components/Header";
 import HeroSection from "@/components/HeroSection";
 import ProductCard from "@/components/ProductCard";
-import StoreCard from "@/components/StoreCard";
 import CategoryPill from "@/components/CategoryPill";
 import BottomNav from "@/components/BottomNav";
 import AuthModal from "@/components/AuthModal";
@@ -19,18 +18,17 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useCities } from "@/hooks/useCities";
+import { compareSizeKeys, sizeFromName, sizeKey, sizeLabel } from "@/lib/size";
 import { useUserRole } from "@/hooks/useUserRole";
-import { useBankPromos, usePromoPrefs } from "@/hooks/useBankPromos";
-import { bestPromoForStore } from "@/lib/promos";
 
-// Productos por página en el inicio. ALL = mostrar todos.
-const PAGE_SIZES = [50, 100, 200];
-const ALL = Number.MAX_SAFE_INTEGER;
+// Productos que se muestran de entrada y que suma cada "Ver más".
+const PAGE_SIZE = 50;
 
 const Index = () => {
   const navigate = useNavigate();
-  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZES[0]);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  // Tamaño elegido ("1.5 lt", "0.5 kg"...); "" = todos.
+  const [sizeFilter, setSizeFilter] = useState("");
   // Pestaña inicial desde la URL (la pestaña Promos vuelve con ?tab=map, ?tab=favorites...).
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get("tab") || "home";
@@ -84,11 +82,6 @@ const Index = () => {
   
   const { data: categories = [], isLoading: categoriesLoading } = useCategories();
 
-  // Mejor promo bancaria del día elegido en cada tienda (con los medios de pago guardados).
-  const { data: promos = [] } = useBankPromos();
-  const allMedios = useMemo(() => [...new Set(promos.map((p) => p.medio))].sort(), [promos]);
-  const { medios, day } = usePromoPrefs(allMedios);
-
   // Filter favorites
   const favoriteProducts = useMemo(() => {
     return products.filter((p) => favorites.includes(p.id));
@@ -115,12 +108,31 @@ const Index = () => {
     navigate(`/product/${productId}`);
   };
 
-  const displayProducts = activeTab === "favorites" ? favoriteProducts : products;
+  const listByCategory = activeTab === "favorites" ? favoriteProducts : products;
 
-  // Al cambiar de categoría, búsqueda o pestaña, la lista vuelve a la primera página.
+  // Tamaños presentes en la lista actual (leídos del nombre), con cuántos productos tiene cada uno.
+  const sizeOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of listByCategory) {
+      const k = sizeKey(sizeFromName(p.name));
+      if (k) counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => compareSizeKeys(a[0], b[0]));
+  }, [listByCategory]);
+
+  const shownProducts = useMemo(
+    () => (sizeFilter ? listByCategory.filter((p) => sizeKey(sizeFromName(p.name)) === sizeFilter) : listByCategory),
+    [listByCategory, sizeFilter],
+  );
+  const displayProducts = shownProducts;
+
+  // Al cambiar de categoría, búsqueda o pestaña se vuelve a "todos los tamaños" y a la primera página.
   useEffect(() => {
-    setVisibleCount(pageSize);
-  }, [activeCategory, debouncedSearchQuery, activeTab, pageSize]);
+    setSizeFilter("");
+  }, [activeCategory, debouncedSearchQuery, activeTab]);
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [activeCategory, debouncedSearchQuery, activeTab, sizeFilter]);
 
   return (
     <div className="min-h-screen bg-background pb-20 sm:pb-0">
@@ -183,6 +195,21 @@ const Index = () => {
       {/* Products */}
       <section className="py-8">
         <div className="container">
+          {!locationLoading && locationFallback && !selectedCity && (
+            <div className="mb-6 p-3 rounded-xl bg-accent-light text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p>
+                <strong>No pudimos usar tu ubicación</strong> y mostramos precios cerca del centro de Rosario.{" "}
+                {locationError}{" "}
+                {locationDenied
+                  ? "Tocá el candado o el ícono de ubicación al lado de la dirección del sitio, permití la ubicación y reintentá."
+                  : "Revisá que la ubicación del dispositivo esté activada."}
+              </p>
+              <Button variant="outline" size="sm" className="shrink-0" onClick={retryLocation}>
+                Reintentar
+              </Button>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
             <div>
               <h2 className="text-2xl font-bold text-foreground">
@@ -196,31 +223,31 @@ const Index = () => {
                     : "Comparamos precios para que ahorres"}
               </p>
             </div>
-            {displayProducts.length > PAGE_SIZES[0] && (
+            {(sizeOptions.length > 1 || sizeFilter) && (
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>
-                  Mostrando {Math.min(visibleCount, displayProducts.length)} de {displayProducts.length}
-                </span>
+                <span>Tamaño</span>
                 <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    const size = Number(e.target.value);
-                    setPageSize(size);
-                    setVisibleCount(size);
-                  }}
-                  aria-label="Cantidad de productos por página"
+                  value={sizeFilter}
+                  onChange={(e) => setSizeFilter(e.target.value)}
+                  aria-label="Tamaño del producto"
                   className="h-9 rounded-lg border border-border bg-card px-2 text-foreground"
                 >
-                  {PAGE_SIZES.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
+                  <option value="">Todos ({listByCategory.length})</option>
+                  {sizeOptions.map(([key, count]) => (
+                    <option key={key} value={key}>
+                      {sizeLabel(key)} ({count})
                     </option>
                   ))}
-                  <option value={ALL}>Todos</option>
                 </select>
               </label>
             )}
           </div>
+
+          {shownProducts.length > PAGE_SIZE && (
+            <p className="text-sm text-muted-foreground -mt-3 mb-4">
+              Mostrando {Math.min(visibleCount, shownProducts.length)} de {shownProducts.length}
+            </p>
+          )}
 
           {productsLoading ? (
             <div className="flex justify-center py-12">
@@ -259,75 +286,9 @@ const Index = () => {
 
           {!productsLoading && visibleCount < displayProducts.length && (
             <div className="flex justify-center mt-8">
-              <Button variant="outline" onClick={() => setVisibleCount((n) => n + pageSize)}>
-                Ver {Math.min(pageSize, displayProducts.length - visibleCount)} más
+              <Button variant="outline" onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}>
+                Ver {Math.min(PAGE_SIZE, displayProducts.length - visibleCount)} más
               </Button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Stores */}
-      <section className="py-8 bg-secondary/50">
-        <div className="container">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-foreground">
-                Tiendas cercanas
-              </h2>
-              <p className="text-muted-foreground">
-                {locationLoading
-                  ? "Obteniendo tu ubicación..."
-                  : selectedCity
-                    ? `${stores.length} tiendas en ${selectedCity.name}`
-                    : locationFallback
-                    ? `${stores.length} tiendas cerca del centro de Rosario`
-                    : `${stores.length} tiendas cerca de ti`}
-              </p>
-            </div>
-            {user && isVerified && (
-              <Button variant="outline" size="sm" onClick={() => navigate("/auth")}>
-                <Plus className="w-4 h-4 mr-1" />
-                Agregar tienda
-              </Button>
-            )}
-          </div>
-
-          {!locationLoading && locationFallback && !selectedCity && (
-            <div className="mb-4 p-3 rounded-xl bg-accent-light text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <p>
-                <strong>No pudimos usar tu ubicación.</strong> {locationError}{" "}
-                {locationDenied
-                  ? "Tocá el candado o el ícono de ubicación al lado de la dirección del sitio, permití la ubicación y reintentá."
-                  : "Revisá que la ubicación del dispositivo esté activada."}
-              </p>
-              <Button variant="outline" size="sm" className="shrink-0" onClick={retryLocation}>
-                Reintentar
-              </Button>
-            </div>
-          )}
-
-          {storesLoading || locationLoading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-          ) : stores.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">
-                No hay tiendas cercanas a tu ubicación
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {stores.map((store) => (
-                <div 
-                  key={store.id} 
-                  onClick={() => navigate(`/store/${store.id}`)}
-                  className="cursor-pointer"
-                >
-                  <StoreCard {...store} bestPromo={bestPromoForStore(promos, store.name, { medios, day })?.promo} />
-                </div>
-              ))}
             </div>
           )}
         </div>

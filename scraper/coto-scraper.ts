@@ -16,7 +16,8 @@ const supabase = createClient(
 const COTO_KEY = 'key_r6xzz4IAoTWcipni';
 
 async function getStoreId() {
-  const { data } = await supabase.from('stores').select('id, name').ilike('name', '%coto%').limit(1).maybeSingle();
+  // Nombre que empiece con "Coto" (con "%coto%" podía caer en "Escoto" u otra tienda).
+  const { data } = await supabase.from('stores').select('id, name').ilike('name', 'Coto%').order('id').limit(1).maybeSingle();
   return data;
 }
 
