@@ -1,4 +1,4 @@
-import { Home, Search, MapPin, Heart, User } from "lucide-react";
+import { Home, Search, MapPin, Heart, User, Percent } from "lucide-react";
 
 interface BottomNavProps {
   activeTab: string;
@@ -9,6 +9,7 @@ const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
   const tabs = [
     { id: "home", icon: Home, label: "Inicio" },
     { id: "search", icon: Search, label: "Buscar" },
+    { id: "promos", icon: Percent, label: "Promos" },
     { id: "map", icon: MapPin, label: "Mapa" },
     { id: "favorites", icon: Heart, label: "Favoritos" },
     { id: "profile", icon: User, label: "Perfil" },
@@ -25,7 +26,7 @@ const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all ${
+              className={`flex flex-col items-center gap-1 px-1.5 py-2 rounded-xl transition-all ${
                 isActive
                   ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"

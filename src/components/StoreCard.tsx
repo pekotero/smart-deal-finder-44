@@ -1,5 +1,6 @@
-import { MapPin, Navigation } from "lucide-react";
+import { MapPin, Navigation, Percent } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { promoLabel, type BankPromo } from "@/lib/promos";
 
 export interface StoreCardProps {
   id: string;
@@ -14,6 +15,7 @@ export interface StoreCardProps {
   logo?: string;
   rating?: number;
   active_deals?: number;
+  bestPromo?: BankPromo | null;
 }
 
 const StoreCard = ({
@@ -26,6 +28,7 @@ const StoreCard = ({
   logo_url,
   image,
   logo,
+  bestPromo,
 }: StoreCardProps) => {
   // Validación segura de la distancia para evitar error con .toFixed()
   const rawDist = distance ?? distanceKm;
@@ -50,6 +53,15 @@ const StoreCard = ({
             <MapPin className="w-3 h-3 text-muted-foreground shrink-0" />
             {address || city || "Rosario"}
           </p>
+          {bestPromo && (
+            <p
+              className="text-xs font-medium text-success flex items-center gap-1 mt-1 line-clamp-1"
+              title={bestPromo.requisitos || undefined}
+            >
+              <Percent className="w-3 h-3 shrink-0" />
+              {promoLabel(bestPromo)}
+            </p>
+          )}
         </div>
       </div>
 

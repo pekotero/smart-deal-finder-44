@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2, Plus } from "lucide-react";
 import Header from "@/components/Header";
 import HeroSection from "@/components/HeroSection";
@@ -19,13 +19,18 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useBankPromos, usePromoPrefs } from "@/hooks/useBankPromos";
+import { bestPromoForStore } from "@/lib/promos";
 
 const Index = () => {
   const navigate = useNavigate();
+  // Pestaña inicial desde la URL (la pestaña Promos vuelve con ?tab=map, ?tab=favorites...).
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") || "home";
   const [activeCategory, setActiveCategory] = useState("all");
-  const [activeTab, setActiveTab] = useState("home");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [showAuth, setShowAuth] = useState(false);
-  const [showMap, setShowMap] = useState(false);
+  const [showMap, setShowMap] = useState(initialTab === "map");
   const [showSearchPopup, setShowSearchPopup] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCityId, setSelectedCityId] = useState<string | null>(null);
@@ -60,12 +65,21 @@ const Index = () => {
   
   const { data: categories = [], isLoading: categoriesLoading } = useCategories();
 
+  // Mejor promo bancaria del día elegido en cada tienda (con los medios de pago guardados).
+  const { data: promos = [] } = useBankPromos();
+  const allMedios = useMemo(() => [...new Set(promos.map((p) => p.medio))].sort(), [promos]);
+  const { medios, day } = usePromoPrefs(allMedios);
+
   // Filter favorites
   const favoriteProducts = useMemo(() => {
     return products.filter((p) => favorites.includes(p.id));
   }, [products, favorites]);
 
   const handleTabChange = (tab: string) => {
+    if (tab === "promos") {
+      navigate("/promos");
+      return;
+    }
     setActiveTab(tab);
     if (tab === "map") {
       setShowMap(true);
@@ -239,7 +253,7 @@ const Index = () => {
                   onClick={() => navigate(`/store/${store.id}`)}
                   className="cursor-pointer"
                 >
-                  <StoreCard {...store} />
+                  <StoreCard {...store} bestPromo={bestPromoForStore(promos, store.name, { medios, day })?.promo} />
                 </div>
               ))}
             </div>

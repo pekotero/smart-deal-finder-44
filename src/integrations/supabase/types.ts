@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      bank_promos: {
+        Row: {
+          aplica_a: string[]
+          cadena: string
+          confianza: string | null
+          created_at: string
+          descuento: number | null
+          dias: string[]
+          fuente: string | null
+          id: string
+          medio: string
+          minimo_compra: number | null
+          online: boolean | null
+          requisitos: string | null
+          tipo: string | null
+          tope: number | null
+          tope_periodo: string | null
+          updated_at: string
+          vigencia_desde: string | null
+          vigencia_hasta: string | null
+        }
+        Insert: {
+          aplica_a?: string[]
+          cadena: string
+          confianza?: string | null
+          created_at?: string
+          descuento?: number | null
+          dias?: string[]
+          fuente?: string | null
+          id?: string
+          medio: string
+          minimo_compra?: number | null
+          online?: boolean | null
+          requisitos?: string | null
+          tipo?: string | null
+          tope?: number | null
+          tope_periodo?: string | null
+          updated_at?: string
+          vigencia_desde?: string | null
+          vigencia_hasta?: string | null
+        }
+        Update: {
+          aplica_a?: string[]
+          cadena?: string
+          confianza?: string | null
+          created_at?: string
+          descuento?: number | null
+          dias?: string[]
+          fuente?: string | null
+          id?: string
+          medio?: string
+          minimo_compra?: number | null
+          online?: boolean | null
+          requisitos?: string | null
+          tipo?: string | null
+          tope?: number | null
+          tope_periodo?: string | null
+          updated_at?: string
+          vigencia_desde?: string | null
+          vigencia_hasta?: string | null
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           created_at: string

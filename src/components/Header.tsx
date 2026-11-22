@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Menu, LogOut } from "lucide-react";
+import { Search, MapPin, User, Menu, LogOut, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -64,6 +64,16 @@ const Header = ({
               onCityChange={onCityChange} 
             />
             
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/promos")}
+              className="hidden sm:flex gap-1.5"
+            >
+              <Percent className="w-4 h-4" />
+              Promos
+            </Button>
+
             <Button
               variant="ghost"
               size="icon"

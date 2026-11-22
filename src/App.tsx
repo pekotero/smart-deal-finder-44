@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import ProductDetail from "./pages/ProductDetail";
 import MapView from "./components/MapView";
 import NotFound from "./pages/NotFound";
+import Promos from "./pages/Promos";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +23,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/product/:id" element={<ProductDetail />} />
             <Route path="/map" element={<MapView />} />
+            <Route path="/promos" element={<Promos />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
