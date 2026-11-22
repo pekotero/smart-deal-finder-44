@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { ShoppingBag, TrendingDown, ExternalLink, Heart, MapPin, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useFavorites } from "@/hooks/useFavorites";
+import { sizeFromName, sizeKey, sizeLabel, unitPrice, unitPriceLabel } from "@/lib/size";
 
 export interface PriceInfo {
   store: string;
@@ -33,6 +34,8 @@ const ProductCard = ({ id, name, image, category, prices, onClick }: ProductCard
   const hasPriceDifference = prices.length > 1 && bestPrice < highestPrice;
   const savingsPercent = hasPriceDifference ? Math.round(((highestPrice - bestPrice) / highestPrice) * 100) : 0;
   const favorite = isFavorite(id);
+  // Tamaño leído del nombre, para mostrar el precio por litro/kilo y comparar entre tamaños.
+  const size = sizeFromName(name);
 
   const handleFavoriteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -81,9 +84,16 @@ const ProductCard = ({ id, name, image, category, prices, onClick }: ProductCard
 
         {/* Content */}
         <div className="p-4">
-          <span className="text-[10px] font-bold text-primary uppercase tracking-wider bg-primary/10 px-2 py-0.5 rounded-md">
-            {category}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold text-primary uppercase tracking-wider bg-primary/10 px-2 py-0.5 rounded-md">
+              {category}
+            </span>
+            {size && (
+              <span className="text-[10px] font-semibold text-muted-foreground bg-secondary px-2 py-0.5 rounded-md">
+                {sizeLabel(sizeKey(size))}
+              </span>
+            )}
+          </div>
           <h3 className="font-semibold text-foreground mt-2 line-clamp-2 text-sm sm:text-base leading-snug group-hover:text-primary transition-colors">
             {name}
           </h3>
@@ -133,6 +143,11 @@ const ProductCard = ({ id, name, image, category, prices, onClick }: ProductCard
                       {priceInfo.originalPrice && priceInfo.originalPrice > priceInfo.price && (
                         <div className="text-[10px] text-muted-foreground line-through">
                           ${priceInfo.originalPrice.toLocaleString("es-AR")}
+                        </div>
+                      )}
+                      {size && (
+                        <div className="text-[10px] text-muted-foreground">
+                          {unitPriceLabel(unitPrice(priceInfo.price, size))}
                         </div>
                       )}
                     </div>

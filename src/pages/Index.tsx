@@ -18,7 +18,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useCities } from "@/hooks/useCities";
-import { compareSizeKeys, sizeFromName, sizeKey, sizeLabel } from "@/lib/size";
+import { compareSizeKeys, sizeFromName, sizeKey, sizeLabel, unitPrice } from "@/lib/size";
 import { useUserRole } from "@/hooks/useUserRole";
 
 // Productos que se muestran de entrada y que suma cada "Ver más".
@@ -29,6 +29,8 @@ const Index = () => {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   // Tamaño elegido ("1.5 lt", "0.5 kg"...); "" = todos.
   const [sizeFilter, setSizeFilter] = useState("");
+  // "" = más comparados primero; "unit" = menor precio por litro/kilo.
+  const [sortBy, setSortBy] = useState<"" | "unit">("");
   // Pestaña inicial desde la URL (la pestaña Promos vuelve con ?tab=map, ?tab=favorites...).
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get("tab") || "home";
@@ -120,10 +122,21 @@ const Index = () => {
     return [...counts.entries()].sort((a, b) => compareSizeKeys(a[0], b[0]));
   }, [listByCategory]);
 
-  const shownProducts = useMemo(
-    () => (sizeFilter ? listByCategory.filter((p) => sizeKey(sizeFromName(p.name)) === sizeFilter) : listByCategory),
-    [listByCategory, sizeFilter],
-  );
+  const shownProducts = useMemo(() => {
+    const list = sizeFilter
+      ? listByCategory.filter((p) => sizeKey(sizeFromName(p.name)) === sizeFilter)
+      : listByCategory;
+    if (sortBy !== "unit") return list;
+    // Menor precio por litro/kilo (con el mejor precio de cada producto). Litros, kilos y
+    // unidades no se comparan entre sí: van en ese orden; los que no tienen tamaño, al final.
+    const UNIT_RANK = { lt: 0, kg: 1, un: 2 } as Record<string, number>;
+    const withUnit = list.map((p) => ({ p, u: unitPrice(p.bestPrice ?? 0, sizeFromName(p.name)) }));
+    withUnit.sort((a, b) => {
+      if (!a.u || !b.u) return (a.u ? 0 : 1) - (b.u ? 0 : 1);
+      return UNIT_RANK[a.u.unit] - UNIT_RANK[b.u.unit] || a.u.value - b.u.value;
+    });
+    return withUnit.map((x) => x.p);
+  }, [listByCategory, sizeFilter, sortBy]);
   const displayProducts = shownProducts;
 
   // Al cambiar de categoría, búsqueda o pestaña se vuelve a "todos los tamaños" y a la primera página.
@@ -132,7 +145,7 @@ const Index = () => {
   }, [activeCategory, debouncedSearchQuery, activeTab]);
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [activeCategory, debouncedSearchQuery, activeTab, sizeFilter]);
+  }, [activeCategory, debouncedSearchQuery, activeTab, sizeFilter, sortBy]);
 
   return (
     <div className="min-h-screen bg-background pb-20 sm:pb-0">
@@ -223,24 +236,40 @@ const Index = () => {
                     : "Comparamos precios para que ahorres"}
               </p>
             </div>
-            {(sizeOptions.length > 1 || sizeFilter) && (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>Tamaño</span>
-                <select
-                  value={sizeFilter}
-                  onChange={(e) => setSizeFilter(e.target.value)}
-                  aria-label="Tamaño del producto"
-                  className="h-9 rounded-lg border border-border bg-card px-2 text-foreground"
-                >
-                  <option value="">Todos ({listByCategory.length})</option>
-                  {sizeOptions.map(([key, count]) => (
-                    <option key={key} value={key}>
-                      {sizeLabel(key)} ({count})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+            <div className="flex flex-wrap items-center gap-3">
+              {(sizeOptions.length > 1 || sizeFilter) && (
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Tamaño</span>
+                  <select
+                    value={sizeFilter}
+                    onChange={(e) => setSizeFilter(e.target.value)}
+                    aria-label="Tamaño del producto"
+                    className="h-9 rounded-lg border border-border bg-card px-2 text-foreground"
+                  >
+                    <option value="">Todos ({listByCategory.length})</option>
+                    {sizeOptions.map(([key, count]) => (
+                      <option key={key} value={key}>
+                        {sizeLabel(key)} ({count})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {listByCategory.length > 1 && (
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Ordenar</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as "" | "unit")}
+                    aria-label="Ordenar productos"
+                    className="h-9 rounded-lg border border-border bg-card px-2 text-foreground"
+                  >
+                    <option value="">Más comparados</option>
+                    <option value="unit">Menor precio por litro/kilo</option>
+                  </select>
+                </label>
+              )}
+            </div>
           </div>
 
           {shownProducts.length > PAGE_SIZE && (

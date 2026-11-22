@@ -46,6 +46,20 @@ export function sizeLabel(key: string) {
   return `${String(n).replace(".", ",")} ${u}`;
 }
 
+// Precio por litro, kilo o unidad, para comparar tamaños distintos.
+export function unitPrice(price: number, size: Size | null) {
+  if (!size || !(price > 0) || !(size.qty > 0)) return null;
+  return { value: price / size.qty, unit: size.unit };
+}
+
+const UNIT_WORD = { lt: "litro", kg: "kilo", un: "unidad" } as const;
+
+// "$3.244 x litro"
+export function unitPriceLabel(u: { value: number; unit: Size["unit"] } | null) {
+  if (!u) return "";
+  return `$${Math.round(u.value).toLocaleString("es-AR")} x ${UNIT_WORD[u.unit]}`;
+}
+
 // Orden: primero por unidad (lt, kg, un) y después de menor a mayor.
 const UNIT_ORDER = { lt: 0, kg: 1, un: 2 } as Record<string, number>;
 export function compareSizeKeys(a: string, b: string) {

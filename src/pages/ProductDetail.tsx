@@ -8,6 +8,7 @@ import { ArrowLeft, MapPin, Store, TrendingDown, CheckCircle2, Share2, Heart, Sh
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { useStores } from '@/hooks/useStores';
 import { chainOf } from '@/hooks/useProducts';
+import { sizeFromName, sizeKey, sizeLabel, unitPrice, unitPriceLabel } from '@/lib/size';
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -159,6 +160,8 @@ export default function ProductDetail() {
   }
 
   const pricesList = product.pricesList || [];
+  // Tamaño leído del nombre, para el precio por litro/kilo.
+  const size = sizeFromName(product.name);
   // Sin precios cerca no se inventa uno: se muestra un aviso (abajo).
   const bestPrice = pricesList[0] || { price: 0, storeName: '' };
   const highestPrice = pricesList.length > 1 ? pricesList[pricesList.length - 1].price : bestPrice.price;
@@ -242,6 +245,11 @@ export default function ProductDetail() {
                 <span className="text-3xl font-black text-emerald-700 dark:text-emerald-400">
                   ${bestPrice.price.toLocaleString('es-AR')}
                 </span>
+                {size && (
+                  <span className="block text-sm font-semibold text-emerald-800/80 dark:text-emerald-300/80">
+                    {sizeLabel(sizeKey(size))} · {unitPriceLabel(unitPrice(bestPrice.price, size))}
+                  </span>
+                )}
                 {maxSavings > 0 && (
                   <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300 pt-1">
                     en <span className="font-bold">{bestPrice.storeName}</span> • Ahorrás ${maxSavings.toLocaleString('es-AR')} vs el más caro
@@ -298,6 +306,11 @@ export default function ProductDetail() {
                         <span className="text-lg font-black text-foreground block">
                           ${item.price.toLocaleString('es-AR')}
                         </span>
+                        {size && (
+                          <span className="text-xs text-muted-foreground block">
+                            {unitPriceLabel(unitPrice(item.price, size))}
+                          </span>
+                        )}
                         {diff > 0 ? (
                           <span className="text-xs font-semibold text-rose-500">
                             +${diff.toLocaleString('es-AR')}
