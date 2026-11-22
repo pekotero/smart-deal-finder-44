@@ -57,6 +57,8 @@ const ProductCard = ({ id, name, image, category, prices, onClick }: ProductCard
           <img
             src={image}
             alt={name}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
           />
           {savingsPercent > 0 && (

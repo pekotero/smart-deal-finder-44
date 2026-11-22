@@ -40,7 +40,15 @@ const Index = () => {
   const { isVerified, canAddPrices, remainingFreeContributions } = useUserRole();
   
   // Get user location
-  const { latitude: userLatitude, longitude: userLongitude, loading: locationLoading } = useGeolocation();
+  const {
+    latitude: userLatitude,
+    longitude: userLongitude,
+    loading: locationLoading,
+    isFallback: locationFallback,
+    denied: locationDenied,
+    error: locationError,
+    retry: retryLocation,
+  } = useGeolocation();
 
   // Debounce search query to avoid too many requests
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -53,6 +61,7 @@ const Index = () => {
     userLongitude,
     maxDistanceKm: 30, // Search in the whole city
     cityId: selectedCityId,
+    enabled: !locationLoading,
   });
   
   // Fetch stores with user location for distance calculation
@@ -61,6 +70,7 @@ const Index = () => {
     userLongitude,
     maxDistanceKm: 30, // Show stores in the whole city
     cityId: selectedCityId,
+    enabled: !locationLoading,
   });
   
   const { data: categories = [], isLoading: categoriesLoading } = useCategories();
@@ -220,11 +230,11 @@ const Index = () => {
                 Tiendas cercanas
               </h2>
               <p className="text-muted-foreground">
-                {locationLoading 
+                {locationLoading
                   ? "Obteniendo tu ubicación..."
-                  : userLatitude && userLongitude
-                    ? `${stores.length} tiendas cerca de ti`
-                    : "Activa la ubicación para ver tiendas cercanas"}
+                  : locationFallback
+                    ? `${stores.length} tiendas cerca del centro de Rosario`
+                    : `${stores.length} tiendas cerca de ti`}
               </p>
             </div>
             {user && isVerified && (
@@ -234,6 +244,20 @@ const Index = () => {
               </Button>
             )}
           </div>
+
+          {!locationLoading && locationFallback && (
+            <div className="mb-4 p-3 rounded-xl bg-accent-light text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p>
+                <strong>No pudimos usar tu ubicación.</strong> {locationError}{" "}
+                {locationDenied
+                  ? "Tocá el candado o el ícono de ubicación al lado de la dirección del sitio, permití la ubicación y reintentá."
+                  : "Revisá que la ubicación del dispositivo esté activada."}
+              </p>
+              <Button variant="outline" size="sm" className="shrink-0" onClick={retryLocation}>
+                Reintentar
+              </Button>
+            </div>
+          )}
 
           {storesLoading || locationLoading ? (
             <div className="flex justify-center py-12">

@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Tables } from "@/integrations/supabase/types";
+
+type StoreRow = Tables<"stores">;
 
 export interface Store {
   id: string;
@@ -19,6 +22,8 @@ interface UseStoresOptions {
   userLongitude?: number | null;
   maxDistanceKm?: number;
   cityId?: string | null;
+  // false mientras se espera la ubicación, para no bajar todas las tiendas del país.
+  enabled?: boolean;
 }
 
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -41,17 +46,41 @@ export const useStores = (options?: UseStoresOptions) => {
   const [error, setError] = useState<any>(null);
 
   useEffect(() => {
+    if (options?.enabled === false) return;
+    // Si cambian la ubicación o la ciudad mientras se carga, la respuesta vieja se descarta.
+    let stale = false;
     const fetchStores = async () => {
       try {
         setIsLoading(true);
-        let query = supabase.from("stores").select("*");
+        const lat = options?.userLatitude;
+        const lng = options?.userLongitude;
+        const hasGps = typeof lat === "number" && typeof lng === "number";
+        const radius = options?.maxDistanceKm ?? 30;
 
-        if (options?.cityId) {
-          query = query.eq("city_id", options.cityId);
+        // Supabase devuelve como máximo 1000 filas por consulta y hay miles de tiendas:
+        // se piden sólo las del recuadro alrededor del usuario y se pagina.
+        const PAGE = 1000;
+        const MAX_PAGES = 10;
+        const storesData: StoreRow[] = [];
+        for (let page = 0; page < MAX_PAGES; page++) {
+          let query = supabase.from("stores").select("*");
+          if (options?.cityId) query = query.eq("city_id", options.cityId);
+          if (hasGps) {
+            const dLat = radius / 111;
+            const dLng = radius / (111 * Math.cos((lat * Math.PI) / 180));
+            query = query
+              .gte("latitude", lat - dLat)
+              .lte("latitude", lat + dLat)
+              .gte("longitude", lng - dLng)
+              .lte("longitude", lng + dLng);
+          }
+          const { data: chunk, error: storesError } = await query
+            .order("id")
+            .range(page * PAGE, page * PAGE + PAGE - 1);
+          if (storesError) throw storesError;
+          storesData.push(...(chunk || []));
+          if (!chunk || chunk.length < PAGE) break;
         }
-
-        const { data: storesData, error: storesError } = await query;
-        if (storesError) throw storesError;
 
         let processedStores: Store[] = (storesData || []).map((s) => {
           let dist: number | undefined = undefined;
@@ -85,17 +114,22 @@ export const useStores = (options?: UseStoresOptions) => {
         // Ordenar por cercanía
         processedStores.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
 
+        if (stale) return;
         setData(processedStores);
       } catch (err) {
+        if (stale) return;
         console.error("Error al cargar tiendas:", err);
         setError(err);
       } finally {
-        setIsLoading(false);
+        if (!stale) setIsLoading(false);
       }
     };
 
     fetchStores();
-  }, [options?.userLatitude, options?.userLongitude, options?.maxDistanceKm, options?.cityId]);
+    return () => {
+      stale = true;
+    };
+  }, [options?.userLatitude, options?.userLongitude, options?.maxDistanceKm, options?.cityId, options?.enabled]);
 
   return { data, isLoading, error };
 };

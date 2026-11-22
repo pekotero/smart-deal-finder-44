@@ -1,15 +1,31 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 export interface GeolocationState {
   latitude: number | null;
   longitude: number | null;
   error: string | null;
   loading: boolean;
+  // true = no se pudo obtener la ubicación y se está usando el centro de Rosario.
+  isFallback: boolean;
+  // true = el navegador tiene bloqueado el permiso de ubicación para este sitio.
+  denied: boolean;
 }
 
 const ROSARIO_FALLBACK = {
   latitude: -32.94682,
   longitude: -60.63932,
+};
+
+const getPosition = (options: PositionOptions) =>
+  new Promise<GeolocationPosition>((resolve, reject) =>
+    navigator.geolocation.getCurrentPosition(resolve, reject, options),
+  );
+
+const reason = (e: GeolocationPositionError | null) => {
+  if (!e) return "Tu navegador no permite obtener la ubicación.";
+  if (e.code === e.PERMISSION_DENIED) return "El permiso de ubicación está bloqueado para este sitio.";
+  if (e.code === e.TIMEOUT) return "Tu ubicación tardó demasiado en llegar.";
+  return "No se pudo obtener tu ubicación.";
 };
 
 export const useGeolocation = () => {
@@ -18,44 +34,55 @@ export const useGeolocation = () => {
     longitude: null,
     error: null,
     loading: true,
+    isFallback: false,
+    denied: false,
   });
 
-  useEffect(() => {
-    if (!navigator.geolocation) {
+  const locate = useCallback(async () => {
+    setState((s) => ({ ...s, loading: true }));
+    const fallback = (e: GeolocationPositionError | null) => {
+      console.warn("Ubicación no disponible, usando Rosario:", e?.message ?? "sin geolocalización");
       setState({
         latitude: ROSARIO_FALLBACK.latitude,
         longitude: ROSARIO_FALLBACK.longitude,
-        error: "Geolocalización no soportada por el navegador",
+        error: reason(e),
         loading: false,
+        isFallback: true,
+        denied: e?.code === 1,
       });
-      return;
-    }
+    };
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setState({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          error: null,
-          loading: false,
-        });
-      },
-      (error) => {
-        console.warn("Ubicación GPS no disponible o rechazada. Usando Rosario:", error.message);
-        setState({
-          latitude: ROSARIO_FALLBACK.latitude,
-          longitude: ROSARIO_FALLBACK.longitude,
-          error: error.message,
-          loading: false,
-        });
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 30000,
+    // Sin HTTPS el navegador no da la ubicación (localhost sí funciona).
+    if (!navigator.geolocation || !window.isSecureContext) return fallback(null);
+
+    const ok = (p: GeolocationPosition) =>
+      setState({
+        latitude: p.coords.latitude,
+        longitude: p.coords.longitude,
+        error: null,
+        loading: false,
+        isFallback: false,
+        denied: false,
+      });
+
+    try {
+      // GPS preciso primero (celular). En PC o adentro de edificios suele no responder a tiempo.
+      ok(await getPosition({ enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }));
+    } catch (e) {
+      const err = e as GeolocationPositionError;
+      if (err.code === err.PERMISSION_DENIED) return fallback(err);
+      try {
+        // Reintento con la ubicación aproximada por Wi-Fi / red, que es más rápida.
+        ok(await getPosition({ enableHighAccuracy: false, timeout: 15000, maximumAge: 5 * 60000 }));
+      } catch (e2) {
+        fallback(e2 as GeolocationPositionError);
       }
-    );
+    }
   }, []);
 
-  return state;
+  useEffect(() => {
+    locate();
+  }, [locate]);
+
+  return { ...state, retry: locate };
 };

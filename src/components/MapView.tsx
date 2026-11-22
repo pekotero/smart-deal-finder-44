@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { X, MapPin, Navigation, ArrowLeft, Crosshair, Building2 } from "lucide-react";
+import { X, MapPin, ArrowLeft, Crosshair } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useGeolocation } from "@/hooks/useGeolocation";
 
 interface MapViewProps {
   stores?: any[];
@@ -26,9 +27,12 @@ const getStoreColor = (name: string = "") => {
 const MapView = ({ stores = [], onClose }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
-  const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
-  const [gpsLoading, setGpsLoading] = useState(false);
   const navigate = useNavigate();
+  const { latitude, longitude, isFallback, loading: gpsLoading, retry: retryLocation } = useGeolocation();
+  const userPos = useMemo(
+    () => (!isFallback && latitude != null && longitude != null ? { lat: latitude, lng: longitude } : null),
+    [isFallback, latitude, longitude],
+  );
 
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -51,44 +55,6 @@ const MapView = ({ stores = [], onClose }: MapViewProps) => {
     const timer = setTimeout(() => {
       map.invalidateSize();
     }, 250);
-
-    // Solicitar GPS de alta precisión
-    if (navigator.geolocation) {
-      setGpsLoading(true);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setGpsLoading(false);
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          setUserPos({ lat, lng });
-
-          // Pin azul del usuario con ancla exacta al centro (10, 10)
-          const userIcon = L.divIcon({
-            className: "custom-user-pin",
-            html: `
-              <div style="position: relative; width: 20px; height: 20px;">
-                <div style="position: absolute; width: 20px; height: 20px; background-color: #3b82f6; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 12px rgba(59,130,246,0.8); z-index: 2;"></div>
-                <div style="position: absolute; width: 40px; height: 40px; top: -10px; left: -10px; background-color: rgba(59,130,246,0.25); border-radius: 50%; animation: pulse 2s infinite;"></div>
-              </div>
-            `,
-            iconSize: [20, 20],
-            iconAnchor: [10, 10],
-            popupAnchor: [0, -10],
-          });
-
-          L.marker([lat, lng], { icon: userIcon })
-            .addTo(map)
-            .bindPopup("<b>📍 Tu ubicación actual</b>");
-
-          map.setView([lat, lng], 14);
-        },
-        (err) => {
-          setGpsLoading(false);
-          console.warn("GPS no otorgado o no disponible:", err.message);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    }
 
     // Agregar pines de las sucursales con coordenadas exactas
     stores.forEach((store) => {
@@ -151,18 +117,36 @@ const MapView = ({ stores = [], onClose }: MapViewProps) => {
     };
   }, [stores]);
 
-  // Centrar en usuario o en Rosario Centro
+  // Pin azul del usuario cuando hay ubicación real (no el centro de Rosario por defecto).
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map || !userPos) return;
+    const userIcon = L.divIcon({
+      className: "custom-user-pin",
+      html: `
+        <div style="position: relative; width: 20px; height: 20px;">
+          <div style="position: absolute; width: 20px; height: 20px; background-color: #3b82f6; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 12px rgba(59,130,246,0.8); z-index: 2;"></div>
+          <div style="position: absolute; width: 40px; height: 40px; top: -10px; left: -10px; background-color: rgba(59,130,246,0.25); border-radius: 50%; animation: pulse 2s infinite;"></div>
+        </div>
+      `,
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
+      popupAnchor: [0, -10],
+    });
+    const marker = L.marker([userPos.lat, userPos.lng], { icon: userIcon })
+      .addTo(map)
+      .bindPopup("<b>📍 Tu ubicación actual</b>");
+    map.setView([userPos.lat, userPos.lng], 14);
+    return () => {
+      marker.remove();
+    };
+  }, [userPos, stores]);
+
   const centerOnUser = () => {
     if (userPos && mapInstance.current) {
       mapInstance.current.setView([userPos.lat, userPos.lng], 15);
-    } else if (mapInstance.current) {
-      mapInstance.current.setView([ROSARIO_CENTER.lat, ROSARIO_CENTER.lng], 14);
-    }
-  };
-
-  const centerOnRosario = () => {
-    if (mapInstance.current) {
-      mapInstance.current.setView([ROSARIO_CENTER.lat, ROSARIO_CENTER.lng], 13);
+    } else {
+      retryLocation();
     }
   };
 
@@ -186,17 +170,14 @@ const MapView = ({ stores = [], onClose }: MapViewProps) => {
               <MapPin className="w-4 h-4 text-primary" /> Tiendas cercanas
             </h1>
             <p className="text-xs text-muted-foreground">
-              {stores.length} sucursales en Rosario y alrededores
+              {stores.length} sucursales {userPos ? "cerca tuyo" : "cerca del centro de Rosario"}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={centerOnRosario} className="text-xs hidden sm:flex items-center gap-1">
-            <Building2 className="w-3.5 h-3.5" /> Rosario Centro
-          </Button>
-          <Button variant="default" size="sm" onClick={centerOnUser} className="text-xs flex items-center gap-1">
-            <Crosshair className="w-3.5 h-3.5" /> {userPos ? "Mi Ubicación" : "Centrar GPS"}
+          <Button variant="default" size="sm" onClick={centerOnUser} disabled={gpsLoading} className="text-xs flex items-center gap-1">
+            <Crosshair className="w-3.5 h-3.5" /> {gpsLoading ? "Ubicando..." : userPos ? "Mi ubicación" : "Reintentar ubicación"}
           </Button>
           {onClose && (
             <Button variant="ghost" size="icon" onClick={onClose}>

@@ -42,9 +42,9 @@ const StoreCard = ({
       <div className="flex items-center gap-3.5">
         <div className="relative w-12 h-12 rounded-xl bg-secondary flex items-center justify-center overflow-hidden shrink-0 border border-border">
           {displayLogo ? (
-            <img src={displayLogo} alt={name} className="w-full h-full object-cover" />
+            <img src={displayLogo} alt={name} loading="lazy" className="w-full h-full object-cover" />
           ) : (
-            <img src={displayImage} alt={name} className="w-full h-full object-cover" />
+            <img src={displayImage} alt={name} loading="lazy" className="w-full h-full object-cover" />
           )}
         </div>
         <div>
