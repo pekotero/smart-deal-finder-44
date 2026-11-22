@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { MapPin, ChevronDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -7,13 +6,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { supabase } from "@/integrations/supabase/client";
-
-interface City {
-  id: string;
-  name: string;
-  province: string;
-}
+import { useCities } from "@/hooks/useCities";
 
 interface CitySelectorProps {
   selectedCityId: string | null;
@@ -23,17 +16,8 @@ interface CitySelectorProps {
 const CitySelector = ({ selectedCityId, onCityChange }: CitySelectorProps) => {
   const [open, setOpen] = useState(false);
 
-  const { data: cities = [] } = useQuery({
-    queryKey: ["cities"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("cities")
-        .select("id, name, province")
-        .order("name");
-      if (error) throw error;
-      return data as City[];
-    },
-  });
+  // Misma consulta (y misma caché "cities") que el resto de la app, con coordenadas incluidas.
+  const { data: cities = [] } = useCities();
 
   const selectedCity = cities.find((c) => c.id === selectedCityId);
 

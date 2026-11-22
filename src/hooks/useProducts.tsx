@@ -30,7 +30,10 @@ export interface UseProductsOptions {
   userLongitude?: number | null;
   maxDistanceKm?: number;
   cityId?: string | null;
-  // false mientras se espera la ubicación, para no bajar precios de todo el país.
+  // Tiendas cercanas al usuario (las de useStores). Los precios son los online de cada
+  // cadena, así que se muestran en la sucursal más cercana de esa cadena.
+  nearbyStores?: { id: string; name: string; distance?: number }[];
+  // false mientras se esperan la ubicación y las tiendas cercanas.
   enabled?: boolean;
 }
 
@@ -39,7 +42,8 @@ interface PriceRow {
   price: number;
   original_price: number | null;
   store_id: string;
-  stores: { id: string; name: string; latitude: number | null; longitude: number | null; city_id: string | null };
+  last_updated: string;
+  stores: { id: string; name: string };
   products: {
     id: string;
     name: string;
@@ -50,21 +54,7 @@ interface PriceRow {
   };
 }
 
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10;
-}
-
-const chainOf = (storeName: string) => {
+export const chainOf = (storeName: string) => {
   const lower = storeName.toLowerCase();
   if (lower.includes("coto")) return "Coto";
   if (lower.includes("carrefour")) return "Carrefour";
@@ -87,24 +77,20 @@ export const useProducts = (
 
   let searchQuery = "";
   let categoryId = "all";
-  let userLatitude: number | null = null;
-  let userLongitude: number | null = null;
-  let maxDistanceKm = 30;
-  let cityId: string | null = null;
+  let nearbyStores: NonNullable<UseProductsOptions["nearbyStores"]> = [];
   let enabled = true;
 
   if (typeof optsOrSearchQuery === "object" && optsOrSearchQuery !== null) {
     searchQuery = optsOrSearchQuery.searchQuery || "";
     categoryId = optsOrSearchQuery.categoryId || "all";
-    userLatitude = optsOrSearchQuery.userLatitude ?? null;
-    userLongitude = optsOrSearchQuery.userLongitude ?? null;
-    maxDistanceKm = optsOrSearchQuery.maxDistanceKm ?? 30;
-    cityId = optsOrSearchQuery.cityId ?? null;
+    nearbyStores = optsOrSearchQuery.nearbyStores ?? [];
     enabled = optsOrSearchQuery.enabled ?? true;
   } else {
     searchQuery = typeof optsOrSearchQuery === "string" ? optsOrSearchQuery : "";
     categoryId = categoryParam || "all";
   }
+
+  const storesKey = nearbyStores.map((s) => `${s.id}:${s.distance ?? ""}`).join(",");
 
   useEffect(() => {
     if (!enabled) return;
@@ -114,27 +100,26 @@ export const useProducts = (
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const hasGps = typeof userLatitude === "number" && typeof userLongitude === "number";
 
-        // Se parte de los precios (no de los productos) para traer sólo los de tiendas cercanas,
-        // y se pagina porque Supabase devuelve como máximo 1000 filas por consulta.
+        // Sucursal más cercana de cada cadena entre las tiendas cercanas al usuario.
+        const nearestByChain = new Map<string, { id: string; distance?: number }>();
+        for (const s of nearbyStores) {
+          const chain = chainOf(s.name || "");
+          const prev = nearestByChain.get(chain);
+          if (!prev || (s.distance ?? Infinity) < (prev.distance ?? Infinity)) {
+            nearestByChain.set(chain, { id: s.id, distance: s.distance });
+          }
+        }
+
+        // Los precios están cargados en pocas tiendas (son los precios online de cada cadena):
+        // se bajan todos, paginando porque Supabase devuelve como máximo 1000 filas.
         const rows: PriceRow[] = [];
         for (let page = 0; page < MAX_PAGES; page++) {
           let query = supabase
             .from("prices")
             .select(
-              "id, price, original_price, store_id, stores!inner(id, name, latitude, longitude, city_id), products!inner(id, name, image_url, ean, category_id, categories(name))",
+              "id, price, original_price, store_id, last_updated, stores!inner(id, name), products!inner(id, name, image_url, ean, category_id, categories(name))",
             );
-          if (hasGps) {
-            const dLat = maxDistanceKm / 111;
-            const dLng = maxDistanceKm / (111 * Math.cos((userLatitude! * Math.PI) / 180));
-            query = query
-              .gte("stores.latitude", userLatitude! - dLat)
-              .lte("stores.latitude", userLatitude! + dLat)
-              .gte("stores.longitude", userLongitude! - dLng)
-              .lte("stores.longitude", userLongitude! + dLng);
-          }
-          if (cityId) query = query.eq("stores.city_id", cityId);
           if (categoryId && categoryId !== "all" && categoryId !== "Todas") {
             query = query.eq("products.category_id", categoryId);
           }
@@ -146,24 +131,29 @@ export const useProducts = (
           if (!data || data.length < PAGE) break;
         }
 
-        // Agrupar por producto, quedándose con el precio más barato de cada cadena.
-        const byProduct = new Map<string, { info: PriceRow["products"]; chains: Map<string, PriceComparison> }>();
+        // Agrupar por producto: un precio por cadena (el más reciente), ubicado en la sucursal
+        // más cercana de esa cadena. Cadenas sin sucursal cerca no se muestran.
+        const byProduct = new Map<
+          string,
+          { info: PriceRow["products"]; chains: Map<string, PriceComparison & { updated: string }> }
+        >();
         for (const pr of rows) {
-          const store = pr.stores;
-          let dist: number | undefined;
-          if (hasGps && typeof store.latitude === "number" && typeof store.longitude === "number") {
-            dist = calculateDistance(userLatitude!, userLongitude!, store.latitude, store.longitude);
-            if (dist > maxDistanceKm) continue; // el recuadro es más grande que el círculo
-          }
-          const chainName = chainOf(store.name || "Supermercado");
-          const current: PriceComparison = {
+          const chainName = chainOf(pr.stores.name || "Supermercado");
+          const branch = nearestByChain.get(chainName);
+          if (!branch) continue;
+          const price = Number(pr.price);
+          // El scraper a veces guarda el precio anterior multiplicado por 100 ($355.000 en una
+          // leche de $3.550): sólo se muestra tachado si es mayor y como mucho el triple.
+          const orig = pr.original_price ? Number(pr.original_price) : undefined;
+          const current = {
             id: pr.id,
-            price: Number(pr.price),
-            originalPrice: pr.original_price ? Number(pr.original_price) : undefined,
+            price,
+            originalPrice: orig && orig > price && orig <= price * 3 ? orig : undefined,
             store: chainName,
             storeName: chainName,
-            store_id: pr.store_id,
-            distance: dist,
+            store_id: branch.id,
+            distance: branch.distance,
+            updated: pr.last_updated || "",
           };
           let entry = byProduct.get(pr.products.id);
           if (!entry) {
@@ -171,11 +161,13 @@ export const useProducts = (
             byProduct.set(pr.products.id, entry);
           }
           const prev = entry.chains.get(chainName);
-          if (!prev || current.price < prev.price) entry.chains.set(chainName, current);
+          if (!prev || current.updated > prev.updated) entry.chains.set(chainName, current);
         }
 
         const mapped: Product[] = [...byProduct.values()].map(({ info, chains }) => {
-          const prices = [...chains.values()].sort((a, b) => a.price - b.price);
+          const prices: PriceComparison[] = [...chains.values()]
+            .map(({ updated: _updated, ...p }) => p)
+            .sort((a, b) => a.price - b.price);
           const bestPrice = prices[0]?.price;
           let savingsPercentage = 0;
           if (prices.length > 1) {
@@ -195,8 +187,9 @@ export const useProducts = (
           };
         });
 
-        // Primero los que más se ahorra comparando cadenas.
-        mapped.sort((a, b) => (b.savingsPercentage ?? 0) - (a.savingsPercentage ?? 0) || b.prices.length - a.prices.length);
+        // Primero los que se pueden comparar en más cadenas. (No se ordena por % de ahorro porque
+        // hay precios mal cargados por el scraper, ej. $0,89 por una gaseosa, que quedarían arriba.)
+        mapped.sort((a, b) => b.prices.length - a.prices.length || a.name.localeCompare(b.name, "es"));
 
         if (!stale) setProducts(mapped);
       } catch (err) {
@@ -212,7 +205,9 @@ export const useProducts = (
     return () => {
       stale = true;
     };
-  }, [searchQuery, categoryId, userLatitude, userLongitude, maxDistanceKm, cityId, enabled]);
+    // nearbyStores cambia de identidad en cada carga; storesKey evita recargar si son las mismas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, categoryId, storesKey, enabled]);
 
   return {
     data: products,

@@ -64,8 +64,9 @@ export const useStores = (options?: UseStoresOptions) => {
         const storesData: StoreRow[] = [];
         for (let page = 0; page < MAX_PAGES; page++) {
           let query = supabase.from("stores").select("*");
+          // Con una ciudad elegida se muestra esa ciudad; si no, el radio alrededor del usuario.
           if (options?.cityId) query = query.eq("city_id", options.cityId);
-          if (hasGps) {
+          else if (hasGps) {
             const dLat = radius / 111;
             const dLng = radius / (111 * Math.cos((lat * Math.PI) / 180));
             query = query
@@ -105,7 +106,7 @@ export const useStores = (options?: UseStoresOptions) => {
         });
 
         // Filtrar por distancia máxima solo si hay GPS disponible
-        if (options?.maxDistanceKm && typeof options?.userLatitude === "number" && typeof options?.userLongitude === "number") {
+        if (!options?.cityId && options?.maxDistanceKm && typeof options?.userLatitude === "number" && typeof options?.userLongitude === "number") {
           processedStores = processedStores.filter(
             (s) => s.distance === undefined || s.distance <= options.maxDistanceKm!
           );

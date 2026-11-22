@@ -5,25 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, MapPin, Store, TrendingDown, CheckCircle2, Share2, Heart, ShieldAlert } from 'lucide-react';
-
-const ROSARIO_LAT = -32.9468;
-const ROSARIO_LNG = -60.6393;
-
-function getDistanceInKm(lat1?: number, lon1?: number): number {
-  if (!lat1 || !lon1) return 1.8;
-  const R = 6371;
-  const dLat = (ROSARIO_LAT - lat1) * (Math.PI / 180);
-  const dLon = (ROSARIO_LNG - lon1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) *
-      Math.cos(ROSARIO_LAT * (Math.PI / 180)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const dist = Math.round(R * c * 10) / 10;
-  return dist > 30 ? 2.5 : dist || 1.5;
-}
+import { useGeolocation } from '@/hooks/useGeolocation';
+import { useStores } from '@/hooks/useStores';
+import { chainOf } from '@/hooks/useProducts';
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -33,7 +17,20 @@ export default function ProductDetail() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Misma lógica que la lista: los precios son los online de cada cadena y se muestran en la
+  // sucursal más cercana de esa cadena, a partir de la ubicación del usuario.
+  const { latitude, longitude, loading: locationLoading, isFallback } = useGeolocation();
+  const { data: nearbyStores, isLoading: storesLoading } = useStores({
+    userLatitude: latitude,
+    userLongitude: longitude,
+    maxDistanceKm: 30,
+    enabled: !locationLoading,
+  });
+  const storesKey = nearbyStores.map((s) => s.id).join(',');
+  const areaLabel = isFallback ? 'cerca del centro de Rosario' : 'cerca tuyo';
+
   useEffect(() => {
+    if (locationLoading || storesLoading) return;
     async function fetchProductDetail() {
       if (!id) return;
       try {
@@ -56,12 +53,10 @@ export default function ProductDetail() {
               id,
               price,
               original_price,
+              last_updated,
               stores (
                 id,
-                name,
-                address,
-                latitude,
-                longitude
+                name
               )
             )
           `)
@@ -83,39 +78,39 @@ export default function ProductDetail() {
 
         const rawPrices = Array.isArray(data.prices) ? data.prices : [];
 
-        // Deduplicar lista de supermercados (una sola entrada por cadena)
-        const uniqueStoresMap = new Map<string, any>();
+        // Sucursal más cercana de cada cadena.
+        const nearestByChain = new Map<string, (typeof nearbyStores)[number]>();
+        for (const s of nearbyStores) {
+          const chain = chainOf(s.name || '');
+          const prev = nearestByChain.get(chain);
+          if (!prev || (s.distance ?? Infinity) < (prev.distance ?? Infinity)) nearestByChain.set(chain, s);
+        }
 
+        // Un precio por cadena (el más reciente), en la sucursal más cercana de esa cadena.
+        const uniqueStoresMap = new Map<string, any>();
         for (const p of rawPrices) {
-          let storeData = p.stores || p.store;
+          let storeData: any = p.stores;
           if (Array.isArray(storeData)) storeData = storeData[0];
           if (!storeData || !storeData.name) continue;
-
-          const storeNameClean = String(storeData.name).trim();
-
-          // Ignorar tiendas no activas de Rosario
-          if (storeNameClean.toLowerCase().includes('disco')) continue;
-
-          const distKm = getDistanceInKm(storeData.latitude, storeData.longitude);
-          if (distKm > 30) continue;
 
           const priceVal = Number(p.price);
           if (isNaN(priceVal) || priceVal <= 0) continue;
 
-          const origPrice = p.original_price ? Number(p.original_price) : priceVal;
+          const chain = chainOf(String(storeData.name).trim());
+          const branch = nearestByChain.get(chain);
+          if (!branch) continue;
 
           const priceItem = {
             id: p.id,
             price: priceVal,
-            originalPrice: origPrice,
-            storeName: storeNameClean,
-            address: storeData.address || 'Rosario',
-            distanceKm: distKm
+            storeName: chain,
+            address: branch.address || '',
+            distanceKm: branch.distance,
+            updated: p.last_updated || '',
           };
 
-          if (!uniqueStoresMap.has(storeNameClean) || uniqueStoresMap.get(storeNameClean).price > priceVal) {
-            uniqueStoresMap.set(storeNameClean, priceItem);
-          }
+          const prev = uniqueStoresMap.get(chain);
+          if (!prev || priceItem.updated > prev.updated) uniqueStoresMap.set(chain, priceItem);
         }
 
         const sortedPrices = Array.from(uniqueStoresMap.values()).sort((a, b) => a.price - b.price);
@@ -135,7 +130,9 @@ export default function ProductDetail() {
     }
 
     fetchProductDetail();
-  }, [id]);
+    // nearbyStores cambia de identidad en cada carga; storesKey evita recargar si son las mismas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, storesKey, locationLoading, storesLoading]);
 
   if (loading) {
     return (
@@ -162,7 +159,8 @@ export default function ProductDetail() {
   }
 
   const pricesList = product.pricesList || [];
-  const bestPrice = pricesList[0] || { price: product.price || 0, storeName: 'Coto', distanceKm: 1.5 };
+  // Sin precios cerca no se inventa uno: se muestra un aviso (abajo).
+  const bestPrice = pricesList[0] || { price: 0, storeName: '' };
   const highestPrice = pricesList.length > 1 ? pricesList[pricesList.length - 1].price : bestPrice.price;
   const maxSavings = highestPrice > bestPrice.price ? highestPrice - bestPrice.price : 0;
   const maxSavingsPct = highestPrice > bestPrice.price ? Math.round((maxSavings / highestPrice) * 100) : 0;
@@ -228,11 +226,18 @@ export default function ProductDetail() {
               </h1>
             </div>
 
+            {pricesList.length === 0 && (
+              <p className="text-sm text-muted-foreground bg-muted/30 rounded-xl p-4">
+                No hay precios de este producto en supermercados {areaLabel}.
+              </p>
+            )}
+
             {/* Mejor Precio */}
+            {pricesList.length > 0 && (
             <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl p-4 flex items-center justify-between">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 block">
-                  Mejor Precio en Rosario
+                  Mejor precio {areaLabel}
                 </span>
                 <span className="text-3xl font-black text-emerald-700 dark:text-emerald-400">
                   ${bestPrice.price.toLocaleString('es-AR')}
@@ -248,8 +253,10 @@ export default function ProductDetail() {
                 {bestPrice.storeName}
               </Badge>
             </div>
+            )}
 
             {/* Comparativa por Cadena */}
+            {pricesList.length > 0 && (
             <div className="space-y-3 pt-2">
               <h3 className="text-sm font-bold text-foreground uppercase tracking-wider flex items-center justify-between">
                 <span>Comparar precios ({pricesList.length} supermercados)</span>
@@ -280,7 +287,10 @@ export default function ProductDetail() {
                         </div>
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>a {item.distanceKm} km en Rosario</span>
+                          <span>
+                            {item.distanceKm != null ? `a ${item.distanceKm} km` : 'Sucursal cercana'}
+                            {item.address ? ` · ${item.address}` : ''}
+                          </span>
                         </div>
                       </div>
 
@@ -303,6 +313,7 @@ export default function ProductDetail() {
                 })}
               </div>
             </div>
+            )}
 
           </CardContent>
         </Card>

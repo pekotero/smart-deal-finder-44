@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useGeolocation } from "@/hooks/useGeolocation";
+import { useCities } from "@/hooks/useCities";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useBankPromos, usePromoPrefs } from "@/hooks/useBankPromos";
 import { bestPromoForStore } from "@/lib/promos";
@@ -53,24 +54,26 @@ const Index = () => {
   // Debounce search query to avoid too many requests
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
-  // Fetch data from database with location and city filtering
+  // Con una ciudad elegida se busca alrededor de su centro (las tiendas no tienen city_id cargado).
+  const { data: cities = [] } = useCities();
+  const selectedCity = cities.find((c) => c.id === selectedCityId && c.latitude != null && c.longitude != null);
+  const centerLatitude = selectedCity ? selectedCity.latitude : userLatitude;
+  const centerLongitude = selectedCity ? selectedCity.longitude : userLongitude;
+
+  // Tiendas a 30 km del usuario (o de la ciudad elegida)
+  const { data: stores = [], isLoading: storesLoading } = useStores({
+    userLatitude: centerLatitude,
+    userLongitude: centerLongitude,
+    maxDistanceKm: 30,
+    enabled: !locationLoading,
+  });
+
+  // Productos con precio en alguna cadena que tenga sucursal entre esas tiendas
   const { data: products = [], isLoading: productsLoading } = useProducts({
     categoryId: activeCategory,
     searchQuery: debouncedSearchQuery,
-    userLatitude,
-    userLongitude,
-    maxDistanceKm: 30, // Search in the whole city
-    cityId: selectedCityId,
-    enabled: !locationLoading,
-  });
-  
-  // Fetch stores with user location for distance calculation
-  const { data: stores = [], isLoading: storesLoading } = useStores({
-    userLatitude,
-    userLongitude,
-    maxDistanceKm: 30, // Show stores in the whole city
-    cityId: selectedCityId,
-    enabled: !locationLoading,
+    nearbyStores: stores,
+    enabled: !locationLoading && !storesLoading,
   });
   
   const { data: categories = [], isLoading: categoriesLoading } = useCategories();
@@ -232,7 +235,9 @@ const Index = () => {
               <p className="text-muted-foreground">
                 {locationLoading
                   ? "Obteniendo tu ubicación..."
-                  : locationFallback
+                  : selectedCity
+                    ? `${stores.length} tiendas en ${selectedCity.name}`
+                    : locationFallback
                     ? `${stores.length} tiendas cerca del centro de Rosario`
                     : `${stores.length} tiendas cerca de ti`}
               </p>
@@ -245,7 +250,7 @@ const Index = () => {
             )}
           </div>
 
-          {!locationLoading && locationFallback && (
+          {!locationLoading && locationFallback && !selectedCity && (
             <div className="mb-4 p-3 rounded-xl bg-accent-light text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <p>
                 <strong>No pudimos usar tu ubicación.</strong> {locationError}{" "}
