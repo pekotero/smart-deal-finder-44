@@ -69,39 +69,21 @@ async function scrapeCoto(keyword) {
   return products;
 }
 
-async function scrapeCarrefour(keyword) {
-  const products = [];
-  try {
-    const url = "https://www.carrefour.com.ar/api/catalog_system/pub/products/search/" + encodeURIComponent(keyword) + "?_from=0&_to=15";
-    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!res.ok) return products;
-    const items = await res.json();
-    if (!Array.isArray(items)) return products;
-    for (const item of items) {
-      const sku = item.items?.[0];
-      const seller = sku?.sellers?.[0]?.commertialOffer;
-      const price = Number(seller?.Price);
-      if (!price || isNaN(price) || price <= 0) continue;
-      if (!vtexAvailable(seller)) continue; // sin stock: precio viejo
-      const name = item.productName || "";
-      const ean = sku?.ean;
-      products.push({
-        storeChain: "Carrefour", name, cleanName: sanitizeName(name),
-        ean: ean ? String(ean) : undefined, price,
-        originalPrice: sanePreviousPrice(price, seller?.ListPrice) ?? undefined,
-        imageUrl: sku?.images?.[0]?.imageUrl
-      });
-    }
-  } catch (err) {
-    console.warn("Error scrapeando Carrefour para " + keyword);
-  }
-  return products;
-}
+// Cadenas VTEX: misma API pública. storePattern es la sucursal donde se guardan sus precios
+// online (tiene que ser inequívoca: "Dia%" también agarra "Diarco").
+const VTEX_CHAINS = [
+  { chain: "Carrefour", host: "www.carrefour.com.ar", storePattern: "Carrefour%" },
+  { chain: "Jumbo", host: "www.jumbo.com.ar", storePattern: "Jumbo%" },
+  { chain: "Disco", host: "www.disco.com.ar", storePattern: "Disco (%" },
+  { chain: "Vea", host: "www.vea.com.ar", storePattern: "Vea (%" },
+  { chain: "Día", host: "diaonline.supermercadosdia.com.ar", storePattern: "Dia (%" },
+  { chain: "ChangoMás", host: "www.masonline.com.ar", storePattern: "ChangoMâs (%" },
+];
 
-async function scrapeJumbo(keyword) {
+async function scrapeVtex({ chain, host }, keyword) {
   const products = [];
   try {
-    const url = "https://www.jumbo.com.ar/api/catalog_system/pub/products/search/" + encodeURIComponent(keyword) + "?_from=0&_to=15";
+    const url = "https://" + host + "/api/catalog_system/pub/products/search/" + encodeURIComponent(keyword) + "?_from=0&_to=15";
     const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
     if (!res.ok) return products;
     const items = await res.json();
@@ -115,25 +97,25 @@ async function scrapeJumbo(keyword) {
       const name = item.productName || "";
       const ean = sku?.ean;
       products.push({
-        storeChain: "Jumbo", name, cleanName: sanitizeName(name),
+        storeChain: chain, name, cleanName: sanitizeName(name),
         ean: ean ? String(ean) : undefined, price,
         originalPrice: sanePreviousPrice(price, seller?.ListPrice) ?? undefined,
         imageUrl: sku?.images?.[0]?.imageUrl
       });
     }
   } catch (err) {
-    console.warn("Error scrapeando Jumbo para " + keyword);
+    console.warn("Error scrapeando " + chain + " para " + keyword);
   }
   return products;
 }
 
 async function startPriceScraper() {
-  console.log("Extrayendo precios de Coto, Carrefour y Jumbo...");
+  console.log("Extrayendo precios de Coto, " + VTEX_CHAINS.map((c) => c.chain).join(", ") + "...");
   // Una tienda por cadena, cuyo nombre empiece con la cadena. Antes se buscaba entre las primeras
   // 1000 tiendas y, si no aparecía, se usaba la primera de la lista (de otra cadena).
   const storeByChain = {};
-  for (const chain of ["Coto", "Carrefour", "Jumbo"]) {
-    const { data } = await supabase.from("stores").select("id").ilike("name", chain + "%").order("id").limit(1).maybeSingle();
+  for (const { chain, storePattern } of [{ chain: "Coto", storePattern: "Coto%" }, ...VTEX_CHAINS]) {
+    const { data } = await supabase.from("stores").select("id").ilike("name", storePattern).order("id").limit(1).maybeSingle();
     if (data) storeByChain[chain] = data.id;
     else console.warn("No se encontró tienda para " + chain + ": se saltean sus precios.");
   }
@@ -141,11 +123,11 @@ async function startPriceScraper() {
   let totalItemsScraped = 0;
   for (const keyword of SEARCH_KEYWORDS) {
     console.log("Buscando ofertas para: " + keyword + "...");
-    const [cotoItems, carrefourItems, jumboItems] = await Promise.all([
-      scrapeCoto(keyword), scrapeCarrefour(keyword), scrapeJumbo(keyword)
+    const [cotoItems, ...vtexItems] = await Promise.all([
+      scrapeCoto(keyword), ...VTEX_CHAINS.map((c) => scrapeVtex(c, keyword))
     ]);
-    const allItems = [...cotoItems, ...carrefourItems, ...jumboItems];
-    console.log("  Encontrados: Coto (" + cotoItems.length + "), Carrefour (" + carrefourItems.length + "), Jumbo (" + jumboItems.length + ")");
+    const allItems = [...cotoItems, ...vtexItems.flat()];
+    console.log("  Encontrados: Coto (" + cotoItems.length + "), " + VTEX_CHAINS.map((c, i) => c.chain + " (" + vtexItems[i].length + ")").join(", "));
     for (const item of allItems) {
       let existingProductId = null;
       if (item.ean) {

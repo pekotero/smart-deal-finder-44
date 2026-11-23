@@ -54,6 +54,15 @@ interface PriceRow {
   };
 }
 
+// Las cadenas nuevas se reconocen sólo al principio del nombre (con "Supermercado" opcional),
+// para no confundir "Diarco", "Buen Día", "El Chango" o "Super Vea" con Día, ChangoMás o Vea.
+const CHAIN_PATTERNS: [RegExp, string][] = [
+  [/^(supermercados? )?disco\b/i, "Disco"],
+  [/^(supermercados? )?vea\b(?! d[ií]a)/i, "Vea"],
+  [/^(supermercados? )?d[ií]a\b(?! de\b| a d)/i, "Día"],
+  [/^(supermercados? |hiper |walmart (hiper )?)?chango ?m[aáâà]s\b/i, "ChangoMás"],
+];
+
 export const chainOf = (storeName: string) => {
   const lower = storeName.toLowerCase();
   if (lower.includes("coto")) return "Coto";
@@ -61,6 +70,8 @@ export const chainOf = (storeName: string) => {
   if (lower.includes("jumbo")) return "Jumbo";
   if (lower.includes("gallega")) return "La Gallega";
   if (lower.includes("reina")) return "La Reina";
+  const name = storeName.trim();
+  for (const [re, chain] of CHAIN_PATTERNS) if (re.test(name)) return chain;
   return storeName;
 };
 

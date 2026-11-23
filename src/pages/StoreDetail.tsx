@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useGeolocation, calculateDistanceKm } from "@/hooks/useGeolocation";
+import { chainOf } from "@/hooks/useProducts";
 
 interface StoreProduct {
   id: string;
@@ -58,17 +59,7 @@ const StoreDetail = () => {
           latitude,
           longitude,
           city_id,
-          cities (name),
-          prices (
-            id,
-            price,
-            original_price,
-            products (
-              id,
-              name,
-              image_url
-            )
-          )
+          cities (name)
         `)
         .eq("id", id)
         .maybeSingle();
@@ -85,13 +76,44 @@ const StoreDetail = () => {
         distanceStr = `${dist.toFixed(1)} km`;
       }
 
-      const products: StoreProduct[] = (data.prices || []).map((p: any) => ({
-        id: p.products?.id,
-        name: p.products?.name || "Producto",
-        image: p.products?.image_url || "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=200",
-        price: Number(p.price),
-        originalPrice: p.original_price ? Number(p.original_price) : undefined,
-      })).filter((p: StoreProduct) => p.id);
+      // Los precios son los online de cada cadena y están guardados en una sola sucursal por
+      // cadena: se muestran los de la cadena de esta tienda (el más reciente de cada producto).
+      const chain = chainOf(data.name || "");
+      const latest = new Map<string, StoreProduct & { updated: string }>();
+      for (let page = 0; page < 10; page++) {
+        const { data: rows, error: pErr } = await supabase
+          .from("prices")
+          .select("price, original_price, last_updated, stores!inner(name), products!inner(id, name, image_url)")
+          .order("id")
+          .range(page * 1000, page * 1000 + 999);
+        if (pErr) throw pErr;
+        type Row = {
+          price: number;
+          original_price: number | null;
+          last_updated: string | null;
+          stores: { name: string } | null;
+          products: { id: string; name: string | null; image_url: string | null };
+        };
+        for (const r of (rows || []) as unknown as Row[]) {
+          if (chainOf(r.stores?.name || "") !== chain) continue;
+          const price = Number(r.price);
+          const orig = r.original_price ? Number(r.original_price) : undefined;
+          const item = {
+            id: r.products.id,
+            name: r.products.name || "Producto",
+            image: r.products.image_url || "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=200",
+            price,
+            originalPrice: orig && orig > price && orig <= price * 3 ? orig : undefined,
+            updated: r.last_updated || "",
+          };
+          const prev = latest.get(item.id);
+          if (!prev || item.updated > prev.updated) latest.set(item.id, item);
+        }
+        if (!rows || rows.length < 1000) break;
+      }
+      const products: StoreProduct[] = [...latest.values()]
+        .map(({ updated: _u, ...p }) => p)
+        .sort((a, b) => a.name.localeCompare(b.name, "es"));
 
       return {
         id: data.id,
@@ -226,6 +248,8 @@ const StoreDetail = () => {
                   <img
                     src={product.image}
                     alt={product.name}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover"
                   />
                 </div>

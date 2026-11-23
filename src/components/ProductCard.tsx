@@ -8,7 +8,7 @@ export interface PriceInfo {
   store: string;
   price: number;
   originalPrice?: number;
-  logo: string;
+  logo?: string;
   storeId?: string;
   distance?: string;
   distanceKm?: number;

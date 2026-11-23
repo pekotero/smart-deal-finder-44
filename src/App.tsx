@@ -9,6 +9,7 @@ import ProductDetail from "./pages/ProductDetail";
 import MapView from "./components/MapView";
 import NotFound from "./pages/NotFound";
 import Promos from "./pages/Promos";
+import StoreDetail from "./pages/StoreDetail";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
             <Route path="/product/:id" element={<ProductDetail />} />
             <Route path="/map" element={<MapView />} />
             <Route path="/promos" element={<Promos />} />
+            <Route path="/store/:id" element={<StoreDetail />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

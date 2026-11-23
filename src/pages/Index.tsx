@@ -305,7 +305,14 @@ const Index = () => {
                     name={product.name}
                     image={product.image}
                     category={product.category}
-                    prices={product.prices}
+                    prices={product.prices.map((p) => ({
+                      store: p.store,
+                      price: p.price,
+                      originalPrice: p.originalPrice,
+                      storeId: p.store_id,
+                      distanceKm: p.distance,
+                      distance: p.distance != null ? `a ${p.distance.toFixed(1).replace(".", ",")} km` : undefined,
+                    }))}
                     onClick={() => handleProductClick(product.id)}
                   />
                 </div>

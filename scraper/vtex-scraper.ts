@@ -16,12 +16,20 @@ const supabase = createClient(
 interface VTEXStoreConfig {
   name: string;
   baseUrl: string;
+  // Patrón (ilike) de la sucursal donde se guardan los precios online de la cadena. Tiene que ser
+  // inequívoco: "Dia%" también agarra "Diarco".
+  storePattern: string;
 }
 
-const STORES: VTEXStoreConfig[] = [
-  { name: 'Carrefour', baseUrl: 'www.carrefour.com.ar' },
-  { name: 'Jumbo', baseUrl: 'www.jumbo.com.ar' },
+export const VTEX_STORES: VTEXStoreConfig[] = [
+  { name: 'Carrefour', baseUrl: 'www.carrefour.com.ar', storePattern: 'Carrefour%' },
+  { name: 'Jumbo', baseUrl: 'www.jumbo.com.ar', storePattern: 'Jumbo%' },
+  { name: 'Disco', baseUrl: 'www.disco.com.ar', storePattern: 'Disco (%' },
+  { name: 'Vea', baseUrl: 'www.vea.com.ar', storePattern: 'Vea (%' },
+  { name: 'Día', baseUrl: 'diaonline.supermercadosdia.com.ar', storePattern: 'Dia (%' },
+  { name: 'ChangoMás', baseUrl: 'www.masonline.com.ar', storePattern: 'ChangoMâs (%' },
 ];
+const STORES = VTEX_STORES;
 
 function cleanProductName(rawName: string): string {
   return rawName
@@ -61,7 +69,7 @@ async function scrapeStore(storeConfig: VTEXStoreConfig, queries: string[], catM
   const { data: store } = await supabase
     .from('stores')
     .select('id')
-    .ilike('name', `${storeConfig.name}%`) // que empiece con la cadena
+    .ilike('name', storeConfig.storePattern)
     .order('id')
     .limit(1)
     .maybeSingle();
