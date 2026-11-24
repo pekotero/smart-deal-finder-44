@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chainOf } from "@/hooks/useProducts";
+import { chainOf, isOnlineChain } from "@/hooks/useProducts";
 
 describe("chainOf", () => {
   it("reconoce las sucursales de las cadenas", () => {
@@ -14,6 +14,14 @@ describe("chainOf", () => {
     expect(chainOf("Hiper ChangoMâs")).toBe("ChangoMás");
     expect(chainOf("Changomas (Avenida Domingo Faustino Sarmiento, Goya)")).toBe("ChangoMás");
     expect(chainOf("Jumbo Fisherton")).toBe("Jumbo");
+  });
+
+  it("las tiendas de PedidosYa son cadenas aparte", () => {
+    expect(chainOf("PedidosYa Market (General Pacheco)")).toBe("PedidosYa Market");
+    expect(chainOf("PedidosYa · Carrefour Hiper (Don Torcuato)")).toBe("Carrefour (PedidosYa)");
+    expect(chainOf("PedidosYa · Dia (Don Torcuato)")).toBe("Día (PedidosYa)");
+    expect(isOnlineChain("Carrefour (PedidosYa)")).toBe(true);
+    expect(isOnlineChain("Carrefour")).toBe(false);
   });
 
   it("no confunde comercios con nombres parecidos", () => {

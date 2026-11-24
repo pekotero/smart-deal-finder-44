@@ -31,6 +31,8 @@ const Index = () => {
   const [sizeFilter, setSizeFilter] = useState("");
   // "" = más comparados primero; "unit" = menor precio por litro/kilo.
   const [sortBy, setSortBy] = useState<"" | "unit">("");
+  // "online" = sólo tiendas online (PedidosYa).
+  const [storeFilter, setStoreFilter] = useState<"" | "online">("");
   // Pestaña inicial desde la URL (la pestaña Promos vuelve con ?tab=map, ?tab=favorites...).
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get("tab") || "home";
@@ -110,7 +112,17 @@ const Index = () => {
     navigate(`/product/${productId}`);
   };
 
-  const listByCategory = activeTab === "favorites" ? favoriteProducts : products;
+  const baseList = activeTab === "favorites" ? favoriteProducts : products;
+  // Con "Solo online" cada producto queda con los precios de tiendas online, y sin ellos no se muestra.
+  const listByCategory = useMemo(() => {
+    if (storeFilter !== "online") return baseList;
+    return baseList
+      .map((p) => {
+        const prices = p.prices.filter((pr) => pr.online);
+        return { ...p, prices, bestPrice: prices[0]?.price };
+      })
+      .filter((p) => p.prices.length > 0);
+  }, [baseList, storeFilter]);
 
   // Tamaños presentes en la lista actual (leídos del nombre), con cuántos productos tiene cada uno.
   const sizeOptions = useMemo(() => {
@@ -145,7 +157,7 @@ const Index = () => {
   }, [activeCategory, debouncedSearchQuery, activeTab]);
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [activeCategory, debouncedSearchQuery, activeTab, sizeFilter, sortBy]);
+  }, [activeCategory, debouncedSearchQuery, activeTab, sizeFilter, sortBy, storeFilter]);
 
   return (
     <div className="min-h-screen bg-background pb-20 sm:pb-0">
@@ -237,6 +249,18 @@ const Index = () => {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>Tiendas</span>
+                <select
+                  value={storeFilter}
+                  onChange={(e) => setStoreFilter(e.target.value as "" | "online")}
+                  aria-label="Tiendas a comparar"
+                  className="h-9 rounded-lg border border-border bg-card px-2 text-foreground"
+                >
+                  <option value="">Todas</option>
+                  <option value="online">Solo online (PedidosYa)</option>
+                </select>
+              </label>
               {(sizeOptions.length > 1 || sizeFilter) && (
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
                   <span>Tamaño</span>

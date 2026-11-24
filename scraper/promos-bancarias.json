@@ -16286,6 +16286,27 @@
       },
       "fuente": "https://www.modo.com.ar/promos/20-changomas-fds-yoy-nov26",
       "confianza": "alta"
+    },
+    {
+      "medio": "PedidosYa (saldo en la app)",
+      "cadena": "PedidosYa Market",
+      "aplicaA": [],
+      "dias": [
+        "martes"
+      ],
+      "descuento": 30,
+      "tipo": "reintegro",
+      "tope": null,
+      "topePeriodo": null,
+      "minimoCompra": null,
+      "requisitos": "Todos los martes, 30% de reintegro en saldo de PedidosYa comprando en PedidosYa Market desde la app. Tope no informado. Dato aportado por el usuario el 24/11/2026.",
+      "online": null,
+      "vigencia": {
+        "desde": null,
+        "hasta": null
+      },
+      "fuente": "Usuario (app PedidosYa)",
+      "confianza": "media"
     }
   ]
 }

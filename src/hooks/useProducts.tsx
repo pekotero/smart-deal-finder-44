@@ -9,6 +9,8 @@ export interface PriceComparison {
   storeName: string;
   store_id?: string;
   distance?: number;
+  // Tienda online (PedidosYa).
+  online?: boolean;
 }
 
 export interface Product {
@@ -63,8 +65,20 @@ const CHAIN_PATTERNS: [RegExp, string][] = [
   [/^(supermercados? |hiper |walmart (hiper )?)?chango ?m[aáâà]s\b/i, "ChangoMás"],
 ];
 
+// Tiendas de PedidosYa (cargadas desde la app): son cadenas aparte, con los precios de la app.
+// Van antes que el resto porque "PedidosYa · Carrefour" también dice "carrefour".
+const PEDIDOSYA_RE = /^pedidosya\b/i;
+
+// Tiendas online: se compran desde una app con envío (sus precios no son los de la góndola).
+export const isOnlineChain = (chain: string) => /pedidosya/i.test(chain);
+
 export const chainOf = (storeName: string) => {
   const lower = storeName.toLowerCase();
+  if (PEDIDOSYA_RE.test(storeName.trim())) {
+    if (lower.includes("carrefour")) return "Carrefour (PedidosYa)";
+    if (/\bd[ií]a\b/i.test(storeName)) return "Día (PedidosYa)";
+    return "PedidosYa Market";
+  }
   if (lower.includes("coto")) return "Coto";
   if (lower.includes("carrefour")) return "Carrefour";
   if (lower.includes("jumbo")) return "Jumbo";
@@ -164,6 +178,7 @@ export const useProducts = (
             storeName: chainName,
             store_id: branch.id,
             distance: branch.distance,
+            online: isOnlineChain(chainName),
             updated: pr.last_updated || "",
           };
           let entry = byProduct.get(pr.products.id);
