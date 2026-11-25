@@ -10,12 +10,15 @@ import MapView from "./components/MapView";
 import NotFound from "./pages/NotFound";
 import Promos from "./pages/Promos";
 import StoreDetail from "./pages/StoreDetail";
+import Cart from "./pages/Cart";
+import { CartProvider } from "@/hooks/useCart";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
+      <CartProvider>
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -26,10 +29,12 @@ const App = () => (
             <Route path="/map" element={<MapView />} />
             <Route path="/promos" element={<Promos />} />
             <Route path="/store/:id" element={<StoreDetail />} />
+            <Route path="/carrito" element={<Cart />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
+      </CartProvider>
     </AuthProvider>
   </QueryClientProvider>
 );

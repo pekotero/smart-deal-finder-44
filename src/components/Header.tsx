@@ -1,10 +1,11 @@
-import { Search, MapPin, User, Menu, LogOut, Percent } from "lucide-react";
+import { Search, MapPin, User, Menu, LogOut, Percent, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 import CitySelector from "@/components/CitySelector";
 import { Badge } from "@/components/ui/badge";
+import { useCart } from "@/hooks/useCart";
 
 interface HeaderProps {
   onAuthClick: () => void;
@@ -26,6 +27,7 @@ const Header = ({
   const { user, signOut } = useAuth();
   const { isVerified } = useUserRole();
   const navigate = useNavigate();
+  const { count } = useCart();
 
   return (
     <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b border-border">
@@ -83,6 +85,21 @@ const Header = ({
               <MapPin className="w-5 h-5" />
             </Button>
             
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/carrito")}
+              className="relative"
+              aria-label="Carrito"
+            >
+              <ShoppingCart className="w-5 h-5" />
+              {count > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                  {count > 99 ? "99+" : count}
+                </span>
+              )}
+            </Button>
+
             {user ? (
               <div className="hidden sm:flex items-center gap-2">
                 {isVerified && (

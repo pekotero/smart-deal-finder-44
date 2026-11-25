@@ -4,7 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, MapPin, Store, TrendingDown, CheckCircle2, Share2, Heart, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, MapPin, Store, TrendingDown, CheckCircle2, Share2, Heart, ShieldAlert, ShoppingCart } from 'lucide-react';
+import { toast } from 'sonner';
+import { useCart } from '@/hooks/useCart';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { useStores } from '@/hooks/useStores';
 import { chainOf } from '@/hooks/useProducts';
@@ -13,6 +15,7 @@ import { sizeFromName, sizeKey, sizeLabel, unitPrice, unitPriceLabel } from '@/l
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const cart = useCart();
 
   const [product, setProduct] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -228,6 +231,26 @@ export default function ProductDetail() {
                 {product.name}
               </h1>
             </div>
+
+            <Button
+              className="w-full rounded-xl"
+              variant={cart.has(product.id) ? 'secondary' : 'default'}
+              onClick={() => {
+                const wasIn = cart.has(product.id);
+                cart.add({
+                  id: product.id,
+                  name: product.name,
+                  image: product.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&q=80',
+                  prices: pricesList.map((p: any) => ({ store: p.storeName, price: p.price })),
+                });
+                toast.success(wasIn ? 'Sumaste uno más al carrito' : 'Agregado al carrito', {
+                  action: { label: 'Ver carrito', onClick: () => navigate('/carrito') },
+                });
+              }}
+            >
+              <ShoppingCart className="w-4 h-4 mr-2" />
+              {cart.has(product.id) ? 'En el carrito · sumar uno' : 'Agregar al carrito'}
+            </Button>
 
             {pricesList.length === 0 && (
               <p className="text-sm text-muted-foreground bg-muted/30 rounded-xl p-4">

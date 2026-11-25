@@ -1,7 +1,9 @@
 import { useNavigate } from "react-router-dom";
-import { ShoppingBag, TrendingDown, ExternalLink, Heart, MapPin, Check } from "lucide-react";
+import { ShoppingBag, TrendingDown, Heart, MapPin, Check, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { useFavorites } from "@/hooks/useFavorites";
+import { useCart } from "@/hooks/useCart";
 import { sizeFromName, sizeKey, sizeLabel, unitPrice, unitPriceLabel } from "@/lib/size";
 
 export interface PriceInfo {
@@ -26,6 +28,8 @@ interface ProductCardProps {
 const ProductCard = ({ id, name, image, category, prices, onClick }: ProductCardProps) => {
   const navigate = useNavigate();
   const { toggleFavorite, isFavorite } = useFavorites();
+  const cart = useCart();
+  const inCart = cart.has(id);
   
   const bestPrice = prices.length > 0 ? Math.min(...prices.map((p) => p.price)) : 0;
   const highestPrice = prices.length > 0 ? Math.max(...prices.map((p) => p.price)) : 0;
@@ -40,6 +44,14 @@ const ProductCard = ({ id, name, image, category, prices, onClick }: ProductCard
   const handleFavoriteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     toggleFavorite(id);
+  };
+
+  const handleAddToCart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    cart.add({ id, name, image, prices: prices.map((p) => ({ store: p.store, price: p.price })) });
+    toast.success(inCart ? "Sumaste uno más al carrito" : "Agregado al carrito", {
+      action: { label: "Ver carrito", onClick: () => navigate("/carrito") },
+    });
   };
 
   const handleStoreClick = (e: React.MouseEvent, storeId?: string) => {
@@ -172,8 +184,16 @@ const ProductCard = ({ id, name, image, category, prices, onClick }: ProductCard
             <ShoppingBag className="w-3.5 h-3.5 mr-1.5" />
             Ver Oferta
           </Button>
-          <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 rounded-xl">
-            <ExternalLink className="w-3.5 h-3.5" />
+          <Button
+            variant={inCart ? "secondary" : "outline"}
+            size="icon"
+            className="h-9 w-9 shrink-0 rounded-xl relative"
+            onClick={handleAddToCart}
+            aria-label="Agregar al carrito"
+            title="Agregar al carrito"
+          >
+            <ShoppingCart className={`w-3.5 h-3.5 ${inCart ? "text-primary" : ""}`} />
+            {inCart && <Check className="w-2.5 h-2.5 absolute top-1 right-1 text-primary" />}
           </Button>
         </div>
       </div>
