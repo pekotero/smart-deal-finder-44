@@ -16,3 +16,21 @@ export const sanePreviousPrice = (price: number, previous: unknown) => {
   const prev = Number(previous);
   return prev > price && prev <= price * 3 ? prev : null;
 };
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+// Precio nuevo sospechoso (ej. una gaseosa a $0,89): devuelve el motivo, o null si es creíble.
+// previous: el precio que ya estaba guardado en esa cadena. others: los de las otras cadenas.
+export function suspiciousPrice(price: number, previous: number | null, others: number[]): string | null {
+  if (price < 50) return `precio de $${price}`;
+  if (previous && (price < previous / 3 || price > previous * 3)) return `pasó de $${previous} a $${price}`;
+  if (others.length >= 2) {
+    const m = median(others);
+    if (price < m / 2.5 || price > m * 2.5) return `$${price} contra $${m} en otras cadenas`;
+  }
+  return null;
+}

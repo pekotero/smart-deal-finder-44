@@ -4,7 +4,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, MapPin, Store, TrendingDown, CheckCircle2, Share2, Heart, ShieldAlert, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, MapPin, Store, TrendingDown, CheckCircle2, Share2, Heart, ShieldAlert, ShoppingCart, Bell, BellRing } from 'lucide-react';
+import PriceHistory from '@/components/PriceHistory';
+import { usePriceAlerts } from '@/hooks/usePriceAlerts';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { useCart } from '@/hooks/useCart';
 import { useGeolocation } from '@/hooks/useGeolocation';
@@ -16,6 +19,8 @@ export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const cart = useCart();
+  const { user } = useAuth();
+  const { hasAlert, toggleAlert } = usePriceAlerts();
 
   const [product, setProduct] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -252,6 +257,17 @@ export default function ProductDetail() {
               {cart.has(product.id) ? 'En el carrito · sumar uno' : 'Agregar al carrito'}
             </Button>
 
+            {pricesList.length > 0 && (
+              <Button
+                className="w-full rounded-xl"
+                variant="outline"
+                onClick={() => (user ? toggleAlert(product.id, bestPrice.price) : navigate('/auth'))}
+              >
+                {hasAlert(product.id) ? <BellRing className="w-4 h-4 mr-2 text-primary" /> : <Bell className="w-4 h-4 mr-2" />}
+                {!user ? 'Ingresá para que te avisemos si baja' : hasAlert(product.id) ? 'Te avisamos si baja · quitar' : 'Avisame si baja'}
+              </Button>
+            )}
+
             {pricesList.length === 0 && (
               <p className="text-sm text-muted-foreground bg-muted/30 rounded-xl p-4">
                 No hay precios de este producto en supermercados {areaLabel}.
@@ -350,6 +366,8 @@ export default function ProductDetail() {
               </div>
             </div>
             )}
+
+            <PriceHistory productId={product.id} chains={pricesList.map((p: any) => p.storeName)} />
 
           </CardContent>
         </Card>

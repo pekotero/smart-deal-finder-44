@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { activePromos, bestPromoForStore, chainOk, dateOk, shoppingDate, type BankPromo } from "@/lib/promos";
+import { activePromos, bestPromoForChain, bestPromoForStore, chainOk, dateOk, shoppingDate, type BankPromo } from "@/lib/promos";
 
 const promo = (over: Partial<BankPromo>): BankPromo => ({
   id: Math.random().toString(36),
@@ -107,5 +107,26 @@ describe("bestPromoForStore", () => {
     const r = bestPromoForStore(promos, "Carrefour", filters, 15000);
     expect(r?.missing).toBe(5000);
     expect(r?.save).toBe(0);
+  });
+});
+
+describe("bestPromoForChain", () => {
+  const py = promo({ medio: "PedidosYa (saldo en la app)", cadena: "PedidosYa Market", dias: ["martes"], descuento: 30 });
+  const carrefour = promo({ cadena: "Carrefour", dias: ["martes"], descuento: 20 });
+  const todas = promo({ cadena: "Todas", dias: ["martes"], descuento: 15 });
+  const all = [py, carrefour, todas];
+  const f = { medios: ["Galicia", "PedidosYa (saldo en la app)"], day: "martes", now: NOW };
+
+  it("PedidosYa Market toma sólo su promo", () => {
+    expect(bestPromoForChain(all, "PedidosYa Market", f, 1000)?.promo).toBe(py);
+  });
+
+  it("Carrefour en PedidosYa no toma la promo del Carrefour ni la del Market", () => {
+    expect(bestPromoForChain(all, "Carrefour (PedidosYa)", f, 1000)).toBeNull();
+  });
+
+  it("el Carrefour de siempre no toma la de PedidosYa", () => {
+    expect(bestPromoForChain(all, "Carrefour", f, 1000)?.promo).toBe(carrefour);
+    expect(bestPromoForChain(all, "Coto", f, 1000)?.promo).toBe(todas);
   });
 });

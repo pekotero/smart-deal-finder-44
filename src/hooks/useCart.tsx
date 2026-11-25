@@ -1,6 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
-// Carrito guardado en el navegador (no hace falta iniciar sesión).
+// Carrito guardado en el navegador y, si iniciaste sesión, también en tu cuenta (así lo ves en el
+// celu y en la compu). Si la cuenta no responde, sigue funcionando sólo con el navegador.
 export interface CartItem {
   id: string;
   name: string;
@@ -36,8 +39,38 @@ function load(): CartItem[] {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const snapshot = (i: CartItem) => JSON.stringify([i.qty, i.prices, i.added ?? [], i.name, i.image]);
+
+// Junta el carrito del navegador con el de la cuenta: si un producto está en los dos, queda la
+// cantidad mayor y las marcas de "ya lo agregué" de ambos.
+export function mergeCarts(local: CartItem[], remote: CartItem[]): CartItem[] {
+  const out = new Map(remote.map((i) => [i.id, i]));
+  for (const l of local) {
+    const r = out.get(l.id);
+    if (!r) out.set(l.id, l);
+    else out.set(l.id, { ...r, qty: Math.max(r.qty, l.qty), added: [...new Set([...(r.added ?? []), ...(l.added ?? [])])] });
+  }
+  return [...out.values()];
+}
+
+type CartRow = { product_id: string; name: string; image: string | null; qty: number; prices: unknown; added: string[] };
+const fromRow = (r: CartRow): CartItem => ({
+  id: r.product_id,
+  name: r.name,
+  image: r.image || "",
+  qty: r.qty,
+  prices: Array.isArray(r.prices) ? (r.prices as CartItem["prices"]) : [],
+  added: r.added ?? [],
+});
+
 export const CartProvider = ({ children }: { children: ReactNode }) => {
   const [items, setItems] = useState<CartItem[]>(load);
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+  // Último estado guardado en la cuenta (id -> snapshot); null mientras no se cargó.
+  const synced = useRef<Map<string, string> | null>(null);
+  const [remoteReady, setRemoteReady] = useState(false);
 
   useEffect(() => {
     try {
@@ -46,6 +79,61 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       // Sin almacenamiento (modo privado): el carrito dura mientras la página esté abierta.
     }
   }, [items]);
+
+  // Al iniciar sesión: baja el carrito de la cuenta y lo junta con el del navegador.
+  useEffect(() => {
+    synced.current = null;
+    setRemoteReady(false);
+    if (!userId) return;
+    let stale = false;
+    (async () => {
+      const { data, error } = await supabase.from("cart_items").select("*").eq("user_id", userId);
+      if (stale) return;
+      if (error) {
+        console.warn("El carrito no se pudo leer de la cuenta; queda sólo en este navegador:", error.message);
+        return;
+      }
+      const remote = (data as CartRow[]).map(fromRow);
+      synced.current = new Map(remote.map((i) => [i.id, snapshot(i)]));
+      setItems((local) => mergeCarts(local, remote));
+      setRemoteReady(true);
+    })();
+    return () => {
+      stale = true;
+    };
+  }, [userId]);
+
+  // Cada cambio se guarda en la cuenta: sólo los productos que cambiaron y los que se sacaron.
+  useEffect(() => {
+    const prev = synced.current;
+    if (!userId || !remoteReady || !prev) return;
+    const valid = items.filter((i) => UUID_RE.test(i.id));
+    const now = new Map(valid.map((i) => [i.id, snapshot(i)]));
+    const changed = valid.filter((i) => prev.get(i.id) !== now.get(i.id));
+    const gone = [...prev.keys()].filter((id) => !now.has(id));
+    synced.current = now;
+    const warn = ({ error }: { error: { message: string } | null }) => {
+      if (error) console.warn("No se pudo guardar el carrito en la cuenta:", error.message);
+    };
+    if (changed.length) {
+      supabase
+        .from("cart_items")
+        .upsert(
+          changed.map((i) => ({
+            user_id: userId,
+            product_id: i.id,
+            name: i.name,
+            image: i.image || null,
+            qty: i.qty,
+            prices: i.prices,
+            added: i.added ?? [],
+            updated_at: new Date().toISOString(),
+          })),
+        )
+        .then(warn);
+    }
+    if (gone.length) supabase.from("cart_items").delete().eq("user_id", userId).in("product_id", gone).then(warn);
+  }, [items, userId, remoteReady]);
 
   const add = useCallback((item: Omit<CartItem, "qty" | "added">) => {
     setItems((prev) => {

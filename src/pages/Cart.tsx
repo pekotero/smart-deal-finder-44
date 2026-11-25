@@ -5,13 +5,31 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useCart, totalsByChain } from "@/hooks/useCart";
 import { PEDIDOSYA_STORES, pedidosYaSearchUrl } from "@/lib/pedidosya";
+import { useBankPromos, usePromoPrefs } from "@/hooks/useBankPromos";
+import { bestPromoForChain, promoLabel, today, WEEK } from "@/lib/promos";
 
 const money = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`;
 
 export default function Cart() {
   const navigate = useNavigate();
   const { items, setQty, remove, toggleAdded, clear } = useCart();
-  const totals = useMemo(() => totalsByChain(items), [items]);
+  const { data: promos = [] } = useBankPromos();
+  const allMedios = useMemo(() => [...new Set(promos.map((p) => p.medio))].sort(), [promos]);
+  const { medios, day, setDay } = usePromoPrefs(allMedios);
+
+  // Total de cada cadena con la mejor promo del día para tus medios de pago. Primero las que
+  // tienen todos los productos y, entre ellas, la que sale más barata con la promo.
+  const totals = useMemo(
+    () =>
+      totalsByChain(items)
+        .map((t) => {
+          const best = bestPromoForChain(promos, t.store, { medios, day }, t.total);
+          const save = best?.save ?? 0;
+          return { ...t, promo: best?.promo ?? null, save, missingForPromo: best?.missing, final: t.total - save };
+        })
+        .sort((a, b) => a.missing - b.missing || a.final - b.final),
+    [items, promos, medios, day],
+  );
 
   // Tiendas de PedidosYa, ordenadas como el resumen (primero la que tiene más productos y es más barata).
   const pyChains = useMemo(() => {
@@ -93,25 +111,64 @@ export default function Cart() {
               })}
             </section>
 
-            {/* Total por cadena */}
-            <section className="bg-card border border-border/60 rounded-xl p-4 space-y-2">
-              <h2 className="font-semibold">¿Dónde conviene?</h2>
+            {/* Total por cadena, con promos */}
+            <section className="bg-card border border-border/60 rounded-xl p-4 space-y-3">
+              <div>
+                <h2 className="font-semibold">¿Dónde conviene?</h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Con la mejor promo de tus medios de pago para el día que elijas.{" "}
+                  <Link to="/promos" className="underline">Cambiar medios de pago</Link>
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {WEEK.map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setDay(d)}
+                    className={`px-2.5 py-1 rounded-full text-xs capitalize border transition-colors ${
+                      d === day ? "bg-primary text-primary-foreground border-primary" : "bg-secondary border-transparent hover:border-border"
+                    }`}
+                  >
+                    {d === today() ? "hoy" : d.slice(0, 3)}
+                  </button>
+                ))}
+              </div>
               {totals.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Ningún producto tiene precios en tiendas cercanas.</p>
               ) : (
-                totals.map((t, i) => (
-                  <div key={t.store} className="flex items-center justify-between text-sm">
-                    <span className={i === 0 ? "font-semibold text-emerald-700 dark:text-emerald-400" : ""}>
-                      {t.store}
-                      {t.missing > 0 && (
-                        <span className="text-xs text-muted-foreground font-normal"> · le falta{t.missing > 1 ? "n" : ""} {t.missing}</span>
+                <div className="space-y-2">
+                  {totals.map((t, i) => (
+                    <div key={t.store} className={`rounded-lg p-2.5 ${i === 0 && t.missing === 0 ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-secondary/40"}`}>
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className={i === 0 && t.missing === 0 ? "font-semibold text-emerald-700 dark:text-emerald-400" : "font-medium"}>
+                          {t.store}
+                          {t.missing > 0 && (
+                            <span className="text-xs text-muted-foreground font-normal"> · le falta{t.missing > 1 ? "n" : ""} {t.missing}</span>
+                          )}
+                        </span>
+                        <span className="text-right shrink-0">
+                          <span className="font-bold">{money(t.final)}</span>
+                          {t.save > 0 && <span className="block text-[11px] text-muted-foreground line-through">{money(t.total)}</span>}
+                        </span>
+                      </div>
+                      {t.promo && t.save > 0 && (
+                        <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                          {promoLabel(t.promo)} · ahorrás {money(t.save)}
+                          {t.promo.tipo === "reintegro" && " (te lo devuelven después)"}
+                        </p>
                       )}
-                    </span>
-                    <span className="font-semibold">{money(t.total)}</span>
-                  </div>
-                ))
+                      {t.promo && t.missingForPromo && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Con {money(t.missingForPromo)} más entrás en {promoLabel(t.promo)}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
-              <p className="text-[11px] text-muted-foreground pt-1">Precios de cuando agregaste cada producto, sin promos bancarias.</p>
+              <p className="text-[11px] text-muted-foreground">
+                Precios de cuando agregaste cada producto. Revisá topes y condiciones de cada promo.
+              </p>
             </section>
 
             {/* Armar en PedidosYa */}
@@ -136,7 +193,7 @@ export default function Cart() {
                       }`}
                     >
                       {c}
-                      {t && ` · ${money(t.total)}`}
+                      {t && ` · ${money(t.final)}`}
                     </button>
                   );
                 })}
@@ -181,7 +238,7 @@ export default function Cart() {
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <span className="text-sm">
                   {addedCount} de {items.length} agregados
-                  {pyTotal && <span className="text-muted-foreground"> · total estimado {money(pyTotal.total)}</span>}
+                  {pyTotal && <span className="text-muted-foreground"> · total estimado {money(pyTotal.final)}</span>}
                 </span>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={copyList}>
@@ -194,8 +251,10 @@ export default function Cart() {
                   </Button>
                 </div>
               </div>
-              {pyChain === "PedidosYa Market" && (
-                <p className="text-[11px] text-muted-foreground">Los martes, 30% de reintegro en saldo de PedidosYa comprando en el Market.</p>
+              {pyTotal?.promo && pyTotal.save > 0 && (
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                  Incluye {promoLabel(pyTotal.promo)}: pagá con ese medio en PedidosYa.
+                </p>
               )}
             </section>
           </>

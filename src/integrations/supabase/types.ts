@@ -77,6 +77,47 @@ export type Database = {
         }
         Relationships: []
       }
+      cart_items: {
+        Row: {
+          added: string[]
+          image: string | null
+          name: string
+          prices: Json
+          product_id: string
+          qty: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          added?: string[]
+          image?: string | null
+          name: string
+          prices?: Json
+          product_id: string
+          qty?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          added?: string[]
+          image?: string | null
+          name?: string
+          prices?: Json
+          product_id?: string
+          qty?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cart_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categories: {
         Row: {
           created_at: string
@@ -153,6 +194,74 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      price_alerts: {
+        Row: {
+          base_price: number
+          created_at: string
+          product_id: string
+          user_id: string
+        }
+        Insert: {
+          base_price: number
+          created_at?: string
+          product_id: string
+          user_id: string
+        }
+        Update: {
+          base_price?: number
+          created_at?: string
+          product_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_alerts_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      price_history: {
+        Row: {
+          id: number
+          price: number
+          product_id: string
+          recorded_on: string
+          store_id: string
+        }
+        Insert: {
+          id?: never
+          price: number
+          product_id: string
+          recorded_on?: string
+          store_id: string
+        }
+        Update: {
+          id?: never
+          price?: number
+          product_id?: string
+          recorded_on?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_history_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_history_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
             referencedColumns: ["id"]
           },
         ]

@@ -126,3 +126,11 @@ export function promoLabel(p: BankPromo) {
   const tope = p.tope ? ` (tope ${fmtMoney(p.tope)}${p.tope_periodo ? " por " + p.tope_periodo : ""})` : "";
   return `${p.medio} ${p.descuento}%${p.tipo === "reintegro" ? " reintegro" : ""}${tope}${p.confianza === "baja" ? " ¿?" : ""}`;
 }
+
+// Promo para una cadena de la app. Las tiendas de PedidosYa sólo toman promos de PedidosYa (las
+// del súper en el local no valen comprando por la app) y las demás no toman las de PedidosYa.
+export function bestPromoForChain(promos: BankPromo[], chain: string, filters: PromoFilters, total: number) {
+  const online = /pedidosya/i.test(chain);
+  const list = promos.filter((p) => norm(p.cadena).includes("pedidosya") === online);
+  return bestPromoForStore(list, chain, filters, total);
+}

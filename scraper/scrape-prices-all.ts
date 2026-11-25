@@ -3,7 +3,7 @@ import * as dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import { cotoAvailable, sanePreviousPrice, vtexAvailable } from "./price-rules";
+import { cotoAvailable, sanePreviousPrice, suspiciousPrice, vtexAvailable } from "./price-rules";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -121,6 +121,7 @@ async function startPriceScraper() {
   }
   const getStoreIdForChain = (chain) => storeByChain[chain] || null;
   let totalItemsScraped = 0;
+  let skipped = 0;
   for (const keyword of SEARCH_KEYWORDS) {
     console.log("Buscando ofertas para: " + keyword + "...");
     const [cotoItems, ...vtexItems] = await Promise.all([
@@ -149,6 +150,16 @@ async function startPriceScraper() {
       }
       const storeId = getStoreIdForChain(item.storeChain);
       if (!storeId) continue;
+      // Un precio sospechoso no pisa al anterior: queda el que estaba y se avisa en el log.
+      const { data: current } = await supabase.from("prices").select("price, store_id").eq("product_id", existingProductId);
+      const previous = current?.find((p) => p.store_id === storeId);
+      const others = (current || []).filter((p) => p.store_id !== storeId).map((p) => Number(p.price));
+      const why = suspiciousPrice(item.price, previous ? Number(previous.price) : null, others);
+      if (why) {
+        console.warn("  Precio sospechoso, no se guarda: " + item.storeChain + " " + item.name + " (" + why + ")");
+        skipped++;
+        continue;
+      }
       await supabase.from("prices").delete().eq("product_id", existingProductId).eq("store_id", storeId);
       await supabase.from("prices").insert({
         product_id: existingProductId,
@@ -159,7 +170,7 @@ async function startPriceScraper() {
       totalItemsScraped++;
     }
   }
-  console.log("Sincronizacion finalizada! Se registraron " + totalItemsScraped + " ofertas.");
+  console.log("Sincronizacion finalizada! Se registraron " + totalItemsScraped + " ofertas" + (skipped ? " y se descartaron " + skipped + " precios sospechosos." : "."));
 }
 
 startPriceScraper();

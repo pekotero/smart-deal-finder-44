@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { totalsByChain, type CartItem } from "@/hooks/useCart";
+import { mergeCarts, totalsByChain, type CartItem } from "@/hooks/useCart";
 import { pedidosYaSearchUrl, searchTerm } from "@/lib/pedidosya";
 
 describe("searchTerm", () => {
@@ -26,5 +26,23 @@ describe("totalsByChain", () => {
       { store: "Coto", total: 250, missing: 0 },
       { store: "Día (PedidosYa)", total: 180, missing: 1 },
     ]);
+  });
+});
+
+describe("mergeCarts", () => {
+  it("junta los dos carritos sin duplicar", () => {
+    const local: CartItem[] = [
+      { id: "a", name: "A", image: "", qty: 3, prices: [], added: ["Día (PedidosYa)"] },
+      { id: "c", name: "C", image: "", qty: 1, prices: [] },
+    ];
+    const remote: CartItem[] = [
+      { id: "a", name: "A", image: "", qty: 1, prices: [], added: ["PedidosYa Market"] },
+      { id: "b", name: "B", image: "", qty: 2, prices: [] },
+    ];
+    const merged = mergeCarts(local, remote);
+    expect(merged.map((i) => i.id).sort()).toEqual(["a", "b", "c"]);
+    const a = merged.find((i) => i.id === "a")!;
+    expect(a.qty).toBe(3);
+    expect(a.added?.sort()).toEqual(["Día (PedidosYa)", "PedidosYa Market"]);
   });
 });

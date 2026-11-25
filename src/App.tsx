@@ -11,6 +11,7 @@ import NotFound from "./pages/NotFound";
 import Promos from "./pages/Promos";
 import StoreDetail from "./pages/StoreDetail";
 import Cart from "./pages/Cart";
+import Alerts from "./pages/Alerts";
 import { CartProvider } from "@/hooks/useCart";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/promos" element={<Promos />} />
             <Route path="/store/:id" element={<StoreDetail />} />
             <Route path="/carrito" element={<Cart />} />
+            <Route path="/alertas" element={<Alerts />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

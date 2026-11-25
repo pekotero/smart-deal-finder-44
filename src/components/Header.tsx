@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Menu, LogOut, Percent, ShoppingCart } from "lucide-react";
+import { Search, MapPin, User, Menu, LogOut, Percent, ShoppingCart, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -85,6 +85,11 @@ const Header = ({
               <MapPin className="w-5 h-5" />
             </Button>
             
+            {user && (
+              <Button variant="ghost" size="icon" onClick={() => navigate("/alertas")} aria-label="Alertas de precio">
+                <Bell className="w-5 h-5" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
