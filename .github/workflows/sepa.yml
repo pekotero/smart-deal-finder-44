@@ -9,7 +9,7 @@ on:
 jobs:
   sepa:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
@@ -25,6 +25,12 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: npx tsx sepa-import.ts --write
+      - name: Buscar fotos de los productos nuevos
+        working-directory: ./scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: npx tsx fill-images.ts --write
       - name: Revisar alertas de precio
         if: always()
         working-directory: ./scraper
