@@ -55,6 +55,28 @@ async function main() {
   const todo = await uncategorized();
   console.log(`${todo.length} productos sin categoría`);
   const result = new Map<string, string>(); // product id -> categoría
+  const unsaved = new Map<string, string>();
+
+  // Un update por categoría, de a 200 productos. Se guarda de a poco: un corte no pierde lo hecho.
+  const flush = async () => {
+    if (!WRITE || !unsaved.size) return;
+    const byCat = new Map<string, string[]>();
+    for (const [pid, cat] of unsaved) byCat.set(cat, [...(byCat.get(cat) || []), pid]);
+    unsaved.clear();
+    for (const [cat, pids] of byCat) {
+      const catId = ids.get(cat);
+      if (!catId) continue;
+      for (let i = 0; i < pids.length; i += 200) {
+        const { error } = await db.from("products").update({ category_id: catId }).in("id", pids.slice(i, i + 200));
+        if (error) throw error;
+      }
+    }
+  };
+  const set = async (pid: string, cat: string) => {
+    result.set(pid, cat);
+    unsaved.set(pid, cat);
+    if (unsaved.size >= 500) await flush();
+  };
 
   if (!NO_VTEX) {
     let pending = todo.map((p) => ({ ...p, e: normEan(p.ean) })).filter((p) => p.e);
@@ -68,12 +90,13 @@ async function main() {
         for (const p of chunk) {
           const cat = categoryFromVtex(info.get(p.e!)?.categories || []);
           if (cat) {
-            result.set(p.id, cat);
+            await set(p.id, cat);
             got++;
           }
         }
         await sleep(PAUSE_MS);
       }
+      await flush();
       pending = pending.filter((p) => !result.has(p.id));
       console.log(`${host}: ${got} (${Math.round((Date.now() - t0) / 1000)} s)`);
     }
@@ -83,32 +106,17 @@ async function main() {
     if (result.has(p.id)) continue;
     const cat = guessCategory(p.name);
     if (cat) {
-      result.set(p.id, cat);
+      await set(p.id, cat);
       byName++;
     }
   }
+  await flush();
 
   const counts = new Map<string, number>();
   for (const c of result.values()) counts.set(c, (counts.get(c) || 0) + 1);
   console.log(`Por el nombre: ${byName}. Total: ${result.size} de ${todo.length}`);
   console.log([...counts].sort((a, b) => b[1] - a[1]).map(([c, n]) => `  ${c}: ${n}`).join("\n"));
-  if (!WRITE) {
-    console.log("Modo prueba: no se guardó nada.");
-    return;
-  }
-
-  // Un update por categoría, de a 200 productos.
-  const byCat = new Map<string, string[]>();
-  for (const [pid, cat] of result) byCat.set(cat, [...(byCat.get(cat) || []), pid]);
-  for (const [cat, pids] of byCat) {
-    const catId = ids.get(cat);
-    if (!catId) continue;
-    for (let i = 0; i < pids.length; i += 200) {
-      const { error } = await db.from("products").update({ category_id: catId }).in("id", pids.slice(i, i + 200));
-      if (error) throw error;
-    }
-  }
-  console.log("Listo.");
+  console.log(WRITE ? "Listo." : "Modo prueba: no se guardó nada.");
 }
 
 main().catch((e) => {
