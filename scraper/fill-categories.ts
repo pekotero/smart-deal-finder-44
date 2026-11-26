@@ -11,7 +11,7 @@ import * as dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { CATEGORY_ICONS, categoryFromVtex, guessCategory, normEan } from "./sepa-lib";
-import { BATCH, lookupEans, PAUSE_MS, sleep, VTEX_HOSTS } from "./vtex-lookup";
+import { BATCH, BlockedError, lookupEans, PAUSE_MS, sleep, VTEX_HOSTS } from "./vtex-lookup";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, ".env") });
@@ -42,7 +42,7 @@ async function categoryIds() {
 async function uncategorized() {
   const out: { id: string; name: string; ean: string | null }[] = [];
   for (let from = 0; out.length < LIMIT; from += 1000) {
-    const { data, error } = await db.from("products").select("id, name, ean").is("category_id", null).order("id").range(from, from + 999);
+    const { data, error } = await db.from("products").select("id, name, ean").is("category_id", null).order("created_at", { ascending: false }).order("id").range(from, from + 999);
     if (error) throw error;
     out.push(...(data || []));
     if (!data || data.length < 1000) break;
@@ -86,7 +86,14 @@ async function main() {
       let got = 0;
       for (let i = 0; i < pending.length; i += BATCH) {
         const chunk = pending.slice(i, i + BATCH);
-        const info = await lookupEans(host, [...new Set(chunk.map((p) => p.e!))]);
+        let info;
+        try {
+          info = await lookupEans(host, [...new Set(chunk.map((p) => p.e!))]);
+        } catch (e) {
+          if (!(e instanceof BlockedError)) throw e;
+          console.log(`${host}: bloqueado, se saltea esta vez`);
+          break;
+        }
         for (const p of chunk) {
           const cat = categoryFromVtex(info.get(p.e!)?.categories || []);
           if (cat) {

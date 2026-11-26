@@ -23,6 +23,12 @@ interface VtexProduct {
   items?: { ean?: string; images?: { imageUrl: string }[] }[];
 }
 
+export class BlockedError extends Error {
+  constructor(public host: string) {
+    super(`${host} bloqueó las consultas (403)`);
+  }
+}
+
 export async function lookupEans(host: string, eans: string[]): Promise<Map<string, VtexInfo>> {
   const fq = eans.map((e) => `fq=alternateIds_Ean:${e}`).join("&");
   const url = `https://${host}/api/catalog_system/pub/products/search?${fq}&_from=0&_to=49`;
@@ -34,6 +40,8 @@ export async function lookupEans(host: string, eans: string[]): Promise<Map<stri
         await sleep(3000 * (attempt + 1));
         continue;
       }
+      // 403 = la tienda bloqueó (Cloudflare). No se insiste: se saltea la tienda en esta corrida.
+      if (res.status === 403) throw new BlockedError(host);
       if (!res.ok) return found;
       const data = (await res.json()) as VtexProduct[];
       for (const p of data) {
@@ -45,7 +53,8 @@ export async function lookupEans(host: string, eans: string[]): Promise<Map<stri
         }
       }
       return found;
-    } catch {
+    } catch (e) {
+      if (e instanceof BlockedError) throw e;
       await sleep(2000);
     }
   }

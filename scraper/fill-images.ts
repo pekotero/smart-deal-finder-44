@@ -11,7 +11,7 @@ import * as dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { normEan } from "./sepa-lib";
-import { BATCH, lookupEans, PAUSE_MS, sleep, VTEX_HOSTS } from "./vtex-lookup";
+import { BATCH, BlockedError, lookupEans, PAUSE_MS, sleep, VTEX_HOSTS } from "./vtex-lookup";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, ".env") });
@@ -25,7 +25,7 @@ const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_
 async function missing() {
   const out: { id: string; ean: string }[] = [];
   for (let from = 0; out.length < LIMIT; from += 1000) {
-    let q = db.from("products").select("id, ean").not("ean", "is", null).order("id").range(from, from + 999);
+    let q = db.from("products").select("id, ean").not("ean", "is", null).order("created_at", { ascending: false }).order("id").range(from, from + 999);
     q = RETRY ? q.or("image_url.is.null,image_url.eq.") : q.is("image_url", null);
     const { data, error } = await q;
     if (error) throw error;
@@ -54,6 +54,7 @@ async function main() {
   console.log(`${todo.length} productos sin foto`);
   let pending = todo;
   let total = 0;
+  let blocked = false;
   for (const host of VTEX_HOSTS) {
     if (!pending.length) break;
     const t0 = Date.now();
@@ -61,7 +62,15 @@ async function main() {
     const got = new Set<string>();
     for (let i = 0; i < pending.length; i += BATCH) {
       const chunk = pending.slice(i, i + BATCH);
-      const info = await lookupEans(host, [...new Set(chunk.map((p) => p.ean))]);
+      let info;
+      try {
+        info = await lookupEans(host, [...new Set(chunk.map((p) => p.ean))]);
+      } catch (e) {
+        if (!(e instanceof BlockedError)) throw e;
+        console.log(`${host}: bloqueado, se saltea esta vez`);
+        blocked = true;
+        break;
+      }
       for (const p of chunk) {
         const img = info.get(p.ean)?.image;
         if (img) {
@@ -80,8 +89,9 @@ async function main() {
     pending = pending.filter((p) => !got.has(p.id));
     console.log(`${host}: ${before - pending.length} fotos (${Math.round((Date.now() - t0) / 1000)} s)`);
   }
-  if (WRITE && pending.length && !RETRY) {
+  if (WRITE && pending.length && !RETRY && !blocked) {
     // No aparecieron en ninguna tienda: se marcan para no buscarlos de nuevo cada día.
+    // Si alguna tienda bloqueó, no se marcan: no se buscaron en todas.
     await save(pending.map((p) => ({ id: p.id, image_url: "" })));
   }
   console.log(`${total} fotos encontradas; ${pending.length} sin foto${WRITE ? "" : " (modo prueba, no se guardó nada)"}`);
