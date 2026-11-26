@@ -202,19 +202,37 @@ export type Database = {
         Row: {
           base_price: number
           created_at: string
+          kind: string
+          notified_at: string | null
+          notified_price: number | null
+          percent: number | null
           product_id: string
+          store_ids: string[] | null
+          target_price: number | null
           user_id: string
         }
         Insert: {
           base_price: number
           created_at?: string
+          kind?: string
+          notified_at?: string | null
+          notified_price?: number | null
+          percent?: number | null
           product_id: string
+          store_ids?: string[] | null
+          target_price?: number | null
           user_id: string
         }
         Update: {
           base_price?: number
           created_at?: string
+          kind?: string
+          notified_at?: string | null
+          notified_price?: number | null
+          percent?: number | null
           product_id?: string
+          store_ids?: string[] | null
+          target_price?: number | null
           user_id?: string
         }
         Relationships: [
@@ -226,6 +244,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notifications: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          product_id: string | null
+          read_at: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          product_id?: string | null
+          read_at?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          product_id?: string | null
+          read_at?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      store_reviews: {
+        Row: {
+          author: string | null
+          comment: string | null
+          created_at: string
+          id: string
+          rating: number
+          store_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          author?: string | null
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating: number
+          store_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          author?: string | null
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating?: number
+          store_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       price_history: {
         Row: {
@@ -451,6 +532,7 @@ export type Database = {
       stores: {
         Row: {
           address: string | null
+          chain: string | null
           city_id: string | null
           created_at: string
           id: string
@@ -459,11 +541,14 @@ export type Database = {
           logo_url: string | null
           longitude: number | null
           name: string
+          price_source: string | null
           products_count: number | null
           rating: number | null
+          sepa_id: string | null
         }
         Insert: {
           address?: string | null
+          chain?: string | null
           city_id?: string | null
           created_at?: string
           id?: string
@@ -472,11 +557,14 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           name: string
+          price_source?: string | null
           products_count?: number | null
           rating?: number | null
+          sepa_id?: string | null
         }
         Update: {
           address?: string | null
+          chain?: string | null
           city_id?: string | null
           created_at?: string
           id?: string
@@ -485,8 +573,10 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           name?: string
+          price_source?: string | null
           products_count?: number | null
           rating?: number | null
+          sepa_id?: string | null
         }
         Relationships: [
           {
@@ -595,10 +685,36 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      store_review_stats: {
+        Row: {
+          avg_rating: number | null
+          reviews: number | null
+          store_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       can_add_product: { Args: { _user_id: string }; Returns: boolean }
+      search_products: {
+        Args: {
+          store_ids: string[]
+          q?: string | null
+          cat?: string | null
+          product_ids?: string[] | null
+          lim?: number
+          off?: number
+        }
+        Returns: {
+          id: string
+          name: string
+          image_url: string | null
+          ean: string | null
+          category_name: string | null
+          prices: Json
+          total: number
+        }[]
+      }
       get_user_contribution_count: {
         Args: { _user_id: string }
         Returns: number

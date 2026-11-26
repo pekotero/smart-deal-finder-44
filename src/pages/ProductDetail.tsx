@@ -5,14 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, MapPin, Store, TrendingDown, CheckCircle2, Share2, Heart, ShieldAlert, ShoppingCart, Bell, BellRing } from 'lucide-react';
-import PriceHistory from '@/components/PriceHistory';
+import PriceHistory, { DealVerdict } from '@/components/PriceHistory';
+import PriceAlertDialog from '@/components/PriceAlertDialog';
+import { describeRule } from '@/lib/alerts';
 import { usePriceAlerts } from '@/hooks/usePriceAlerts';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { useCart } from '@/hooks/useCart';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { useStores } from '@/hooks/useStores';
-import { chainOf } from '@/hooks/useProducts';
+import { getOnlineSources } from '@/hooks/useProducts';
+import { pickPrices, priceSources } from '@/lib/price-pick';
 import { sizeFromName, sizeKey, sizeLabel, unitPrice, unitPriceLabel } from '@/lib/size';
 
 export default function ProductDetail() {
@@ -20,14 +23,15 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const cart = useCart();
   const { user } = useAuth();
-  const { hasAlert, toggleAlert } = usePriceAlerts();
+  const { getAlert } = usePriceAlerts();
+  const [alertOpen, setAlertOpen] = useState(false);
 
   const [product, setProduct] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Misma lógica que la lista: los precios son los online de cada cadena y se muestran en la
-  // sucursal más cercana de esa cadena, a partir de la ubicación del usuario.
+  // Misma lógica que la lista (lib/price-pick): precio de la sucursal cercana si lo hay, si no el
+  // online de la cadena, mostrado en su sucursal más cercana.
   const { latitude, longitude, loading: locationLoading, isFallback } = useGeolocation();
   const { data: nearbyStores, isLoading: storesLoading } = useStores({
     userLatitude: latitude,
@@ -63,10 +67,7 @@ export default function ProductDetail() {
               price,
               original_price,
               last_updated,
-              stores (
-                id,
-                name
-              )
+              store_id
             )
           `)
           .eq('id', id)
@@ -86,43 +87,8 @@ export default function ProductDetail() {
         }
 
         const rawPrices = Array.isArray(data.prices) ? data.prices : [];
-
-        // Sucursal más cercana de cada cadena.
-        const nearestByChain = new Map<string, (typeof nearbyStores)[number]>();
-        for (const s of nearbyStores) {
-          const chain = chainOf(s.name || '');
-          const prev = nearestByChain.get(chain);
-          if (!prev || (s.distance ?? Infinity) < (prev.distance ?? Infinity)) nearestByChain.set(chain, s);
-        }
-
-        // Un precio por cadena (el más reciente), en la sucursal más cercana de esa cadena.
-        const uniqueStoresMap = new Map<string, any>();
-        for (const p of rawPrices) {
-          let storeData: any = p.stores;
-          if (Array.isArray(storeData)) storeData = storeData[0];
-          if (!storeData || !storeData.name) continue;
-
-          const priceVal = Number(p.price);
-          if (isNaN(priceVal) || priceVal <= 0) continue;
-
-          const chain = chainOf(String(storeData.name).trim());
-          const branch = nearestByChain.get(chain);
-          if (!branch) continue;
-
-          const priceItem = {
-            id: p.id,
-            price: priceVal,
-            storeName: chain,
-            address: branch.address || '',
-            distanceKm: branch.distance,
-            updated: p.last_updated || '',
-          };
-
-          const prev = uniqueStoresMap.get(chain);
-          if (!prev || priceItem.updated > prev.updated) uniqueStoresMap.set(chain, priceItem);
-        }
-
-        const sortedPrices = Array.from(uniqueStoresMap.values()).sort((a, b) => a.price - b.price);
+        const sources = priceSources(nearbyStores, await getOnlineSources());
+        const sortedPrices = pickPrices(rawPrices, sources).map((p) => ({ ...p, distanceKm: p.distance }));
 
         setProduct({
           ...data,
@@ -258,14 +224,26 @@ export default function ProductDetail() {
             </Button>
 
             {pricesList.length > 0 && (
-              <Button
-                className="w-full rounded-xl"
-                variant="outline"
-                onClick={() => (user ? toggleAlert(product.id, bestPrice.price) : navigate('/auth'))}
-              >
-                {hasAlert(product.id) ? <BellRing className="w-4 h-4 mr-2 text-primary" /> : <Bell className="w-4 h-4 mr-2" />}
-                {!user ? 'Ingresá para que te avisemos si baja' : hasAlert(product.id) ? 'Te avisamos si baja · quitar' : 'Avisame si baja'}
-              </Button>
+              <>
+                <Button className="w-full rounded-xl" variant="outline" onClick={() => (user ? setAlertOpen(true) : navigate('/auth'))}>
+                  {getAlert(product.id) ? <BellRing className="w-4 h-4 mr-2 text-primary" /> : <Bell className="w-4 h-4 mr-2" />}
+                  {!user
+                    ? 'Ingresá para crear una alerta de precio'
+                    : getAlert(product.id)
+                      ? `Alerta: ${describeRule(getAlert(product.id)!).toLowerCase()} · cambiar`
+                      : 'Alerta de precio'}
+                </Button>
+                {user && (
+                  <PriceAlertDialog
+                    open={alertOpen}
+                    onOpenChange={setAlertOpen}
+                    productId={product.id}
+                    productName={product.name}
+                    bestPrice={bestPrice.price}
+                    storeIds={pricesList.map((p: any) => p.source_store_id)}
+                  />
+                )}
+              </>
             )}
 
             {pricesList.length === 0 && (
@@ -300,6 +278,16 @@ export default function ProductDetail() {
                 {bestPrice.storeName}
               </Badge>
             </div>
+            )}
+
+            {pricesList.length > 0 && (
+              <DealVerdict
+                productId={product.id}
+                chains={pricesList.map((p: any) => p.storeName)}
+                storeIds={pricesList.map((p: any) => p.source_store_id)}
+                current={bestPrice.price}
+                discounted={!!bestPrice.originalPrice}
+              />
             )}
 
             {/* Comparativa por Cadena */}
@@ -337,6 +325,7 @@ export default function ProductDetail() {
                           <span>
                             {item.distanceKm != null ? `a ${item.distanceKm} km` : 'Sucursal cercana'}
                             {item.address ? ` · ${item.address}` : ''}
+                            {item.local ? ' · precio de esta sucursal' : ''}
                           </span>
                         </div>
                       </div>
@@ -367,7 +356,11 @@ export default function ProductDetail() {
             </div>
             )}
 
-            <PriceHistory productId={product.id} chains={pricesList.map((p: any) => p.storeName)} />
+            <PriceHistory
+              productId={product.id}
+              chains={pricesList.map((p: any) => p.storeName)}
+              storeIds={pricesList.map((p: any) => p.source_store_id)}
+            />
 
           </CardContent>
         </Card>

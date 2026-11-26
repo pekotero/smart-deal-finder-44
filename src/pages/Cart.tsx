@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, Copy, ExternalLink, Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarCheck, Check, Copy, ExternalLink, Minus, Plus, ShoppingCart, Split, Store, Trash2, TrendingDown } from "lucide-react";
+import { bestEverywhere, bestSingle, bestSplit, chainsIn, type Plan, type PromoFor } from "@/lib/cart-plan";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useCart, totalsByChain } from "@/hooks/useCart";
@@ -30,6 +31,33 @@ export default function Cart() {
         .sort((a, b) => a.missing - b.missing || a.final - b.final),
     [items, promos, medios, day],
   );
+
+  // Planes para cada día de la semana: todo en un super o repartido entre dos, con las promos de
+  // ese día. Sirve para el plan de hoy y para ver qué día conviene comprar.
+  const plans = useMemo(() => {
+    const chains = chainsIn(items);
+    return WEEK.map((d) => {
+      const promoFor: PromoFor = (chain, subtotal) => bestPromoForChain(promos, chain, { medios, day: d }, subtotal);
+      return {
+        day: d,
+        single: bestSingle(items, chains, promoFor),
+        split: bestSplit(items, chains, promoFor),
+        everywhere: bestEverywhere(items, chains, promoFor),
+      };
+    });
+  }, [items, promos, medios]);
+  const plan = plans.find((p) => p.day === day);
+  // Repartir conviene si cubre al menos lo mismo y ahorra algo que valga el segundo viaje.
+  const splitWorth = (single: Plan | null, split: Plan | null) =>
+    !!single && !!split && split.missing.length <= single.missing.length && single.final - split.final >= Math.max(500, single.final * 0.03);
+  // El mejor plan de cada día: repartido si conviene, si no todo en un super.
+  const bestPlan = (p: (typeof plans)[number]) => (splitWorth(p.single, p.split) ? p.split! : p.single);
+  const dayTotal = (p: (typeof plans)[number]) => bestPlan(p)?.final ?? 0;
+  const dayName = (d: string) => (d === today() ? "hoy" : `el ${d}`);
+  const fewestMissing = Math.min(...plans.map((p) => p.single?.missing.length ?? Infinity));
+  const bestDay = plans
+    .filter((p) => p.single && p.single.missing.length === fewestMissing)
+    .reduce<(typeof plans)[number] | null>((b, p) => (!b || dayTotal(p) < dayTotal(b) ? p : b), null);
 
   // Tiendas de PedidosYa, ordenadas como el resumen (primero la que tiene más productos y es más barata).
   const pyChains = useMemo(() => {
@@ -111,27 +139,143 @@ export default function Cart() {
               })}
             </section>
 
+            {/* Plan de compra: qué día y dónde (en uno o dos supers) */}
+            {plan?.single && (
+              <section className="bg-card border border-border/60 rounded-xl p-4 space-y-4">
+                <div>
+                  <h2 className="font-semibold">Tu plan de compra</h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Con la mejor promo de tus medios de pago para cada día.{" "}
+                    <Link to="/promos" className="underline">Cambiar medios de pago</Link>
+                  </p>
+                </div>
+
+                {/* Qué día conviene: total del mejor super de cada día */}
+                <div className="grid grid-cols-7 gap-1">
+                  {plans.map((p) => {
+                    const isBest = bestDay?.day === p.day;
+                    return (
+                      <button
+                        key={p.day}
+                        onClick={() => setDay(p.day)}
+                        aria-pressed={p.day === day}
+                        className={`rounded-lg px-0.5 py-1.5 text-center border transition-colors ${
+                          p.day === day ? "border-primary bg-primary/10" : "border-transparent bg-secondary/50 hover:border-border"
+                        }`}
+                      >
+                        <span className="block text-[11px] capitalize font-medium">{p.day === today() ? "hoy" : p.day.slice(0, 3)}</span>
+                        <span className={`block text-[10px] ${isBest ? "font-bold text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                          {p.single ? money(dayTotal(p)) : "—"}
+                          {splitWorth(p.single, p.split) && <span className="sr-only"> repartido</span>}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {bestDay && bestDay.day !== day && dayTotal(plan) - dayTotal(bestDay) >= 1 && (
+                  <button
+                    onClick={() => setDay(bestDay.day)}
+                    className="w-full flex items-center gap-2 text-left text-sm rounded-lg p-2.5 bg-emerald-500/10 border border-emerald-500/30"
+                  >
+                    <CalendarCheck className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" aria-hidden />
+                    <span>
+                      Si comprás <b>{dayName(bestDay.day)}</b>{" "}
+                      {bestPlan(bestDay)!.parts.length > 1 ? "repartido en " : "en "}
+                      {bestPlan(bestDay)!.parts.map((x) => x.chain).join(" y ")} pagás {money(dayTotal(bestDay))}:{" "}
+                      <b>{money(dayTotal(plan) - dayTotal(bestDay))} menos</b> que {dayName(day)}.
+                    </span>
+                  </button>
+                )}
+
+                {/* Todo en un super vs. repartido */}
+                <div className="space-y-2">
+                  <div className="rounded-lg p-2.5 bg-secondary/40">
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <Store className="w-4 h-4 text-muted-foreground" aria-hidden /> Todo en {plan.single.parts[0]?.chain}
+                      </span>
+                      <span className="font-bold">{money(plan.single.final)}</span>
+                    </div>
+                    {plan.single.missing.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        No tiene: {plan.single.missing.map((i) => i.name).join(", ")}
+                      </p>
+                    )}
+                  </div>
+
+                  {plan.split && splitWorth(plan.single, plan.split) ? (
+                    <div className="rounded-lg p-2.5 bg-emerald-500/10 border border-emerald-500/30 space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-400">
+                          <Split className="w-4 h-4" aria-hidden /> Repartido en {plan.split.parts.map((x) => x.chain).join(" y ")}
+                        </span>
+                        <span className="text-right">
+                          <span className="font-bold">{money(plan.split.final)}</span>
+                          <span className="block text-[11px] text-emerald-700 dark:text-emerald-400">
+                            ahorrás {money(plan.single.final - plan.split.final)}
+                          </span>
+                        </span>
+                      </div>
+                      {plan.split.parts.map((part) => (
+                        <div key={part.chain} className="text-xs">
+                          <p className="font-medium">
+                            En {part.chain}: {money(part.final)}
+                            {part.save > 0 && <span className="text-muted-foreground font-normal"> (con promo, ahorrás {money(part.save)})</span>}
+                          </p>
+                          <p className="text-muted-foreground">{part.items.map((i) => `${i.qty} × ${i.name}`).join(" · ")}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    plan.split && (
+                      <p className="text-xs text-muted-foreground">
+                        Repartir entre dos supers no conviene: ahorrarías{" "}
+                        {plan.single.final > plan.split.final ? `solo ${money(plan.single.final - plan.split.final)}` : "nada"}.
+                      </p>
+                    )
+                  )}
+
+                  {/* Máximo ahorro: cada producto donde está más barato (más de dos supers) */}
+                  {plan.everywhere && plan.everywhere.missing.length <= plan.single.missing.length && bestPlan(plan)!.final - plan.everywhere.final >= 1 && (
+                    <details className="rounded-lg p-2.5 bg-secondary/40 group">
+                      <summary className="flex items-center justify-between gap-2 text-sm cursor-pointer list-none">
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <TrendingDown className="w-4 h-4 text-muted-foreground" aria-hidden /> Máximo ahorro, en {plan.everywhere.parts.length} supers
+                        </span>
+                        <span className="text-right">
+                          <span className="font-bold">{money(plan.everywhere.final)}</span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            {money(bestPlan(plan)!.final - plan.everywhere.final)} menos
+                          </span>
+                        </span>
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        <p className="text-[11px] text-muted-foreground">
+                          Cada producto donde está más barato. Cada super es otro viaje o, en PedidosYa, otro envío: fijate si el ahorro lo vale.
+                        </p>
+                        {plan.everywhere.parts.map((part) => (
+                          <div key={part.chain} className="text-xs">
+                            <p className="font-medium">
+                              En {part.chain}: {money(part.final)}
+                              {part.save > 0 && <span className="text-muted-foreground font-normal"> (con promo, ahorrás {money(part.save)})</span>}
+                            </p>
+                            <p className="text-muted-foreground">{part.items.map((i) => `${i.qty} × ${i.name}`).join(" · ")}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </section>
+            )}
+
             {/* Total por cadena, con promos */}
             <section className="bg-card border border-border/60 rounded-xl p-4 space-y-3">
               <div>
-                <h2 className="font-semibold">¿Dónde conviene?</h2>
+                <h2 className="font-semibold">Total en cada super</h2>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Con la mejor promo de tus medios de pago para el día que elijas.{" "}
-                  <Link to="/promos" className="underline">Cambiar medios de pago</Link>
+                  {day === today() ? "Hoy" : <span className="capitalize">{day}</span>}, con la mejor promo de tus medios de pago.
                 </p>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {WEEK.map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setDay(d)}
-                    className={`px-2.5 py-1 rounded-full text-xs capitalize border transition-colors ${
-                      d === day ? "bg-primary text-primary-foreground border-primary" : "bg-secondary border-transparent hover:border-border"
-                    }`}
-                  >
-                    {d === today() ? "hoy" : d.slice(0, 3)}
-                  </button>
-                ))}
               </div>
               {totals.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Ningún producto tiene precios en tiendas cercanas.</p>

@@ -6,6 +6,7 @@ import { useUserRole } from "@/hooks/useUserRole";
 import CitySelector from "@/components/CitySelector";
 import { Badge } from "@/components/ui/badge";
 import { useCart } from "@/hooks/useCart";
+import { useNotifications } from "@/hooks/useNotifications";
 
 interface HeaderProps {
   onAuthClick: () => void;
@@ -28,6 +29,7 @@ const Header = ({
   const { isVerified } = useUserRole();
   const navigate = useNavigate();
   const { count } = useCart();
+  const { unread } = useNotifications();
 
   return (
     <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b border-border">
@@ -86,8 +88,19 @@ const Header = ({
             </Button>
             
             {user && (
-              <Button variant="ghost" size="icon" onClick={() => navigate("/alertas")} aria-label="Alertas de precio">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate("/alertas")}
+                className="relative"
+                aria-label={unread > 0 ? `Avisos y alertas: ${unread} sin leer` : "Avisos y alertas"}
+              >
                 <Bell className="w-5 h-5" />
+                {unread > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                )}
               </Button>
             )}
             <Button

@@ -2,6 +2,7 @@
 
 export interface HistoryPoint {
   chain: string;
+  storeId?: string;
   date: string; // YYYY-MM-DD
   price: number;
 }
@@ -47,4 +48,45 @@ export function bestPriceChange(points: HistoryPoint[], chains: string[]) {
   const lastBest = best(rows[rows.length - 1]);
   if (!isFinite(first) || !isFinite(lastBest)) return null;
   return { from: first, to: lastBest, pct: Math.round(((lastBest - first) / first) * 100) };
+}
+
+export type DealVerdict =
+  | { kind: "fake"; usual: number; days: number } // muestra descuento pero es el precio de siempre
+  | { kind: "lowest"; usual: number; days: number } // el más bajo del período
+  | { kind: "below"; usual: number; days: number; pct: number }
+  | { kind: "above"; usual: number; days: number; pct: number }
+  | { kind: "usual"; usual: number; days: number };
+
+const DAY = 86400000;
+
+// ¿La oferta es real? Compara el mejor precio de hoy con el habitual (la mediana del mejor precio
+// de cada día en los últimos `windowDays`, sin contar hoy). null si hay pocos días para saberlo.
+export function dealVerdict(
+  points: HistoryPoint[],
+  chains: string[],
+  current: number,
+  discounted: boolean,
+  windowDays = 60,
+  minDays = 5,
+): DealVerdict | null {
+  const rows = historyRows(points, chains);
+  if (rows.length < 2 || !(current > 0)) return null;
+  const lastDate = String(rows[rows.length - 1].date);
+  const from = new Date(new Date(lastDate).getTime() - windowDays * DAY).toISOString().slice(0, 10);
+  const past = rows
+    .filter((r) => String(r.date) < lastDate && String(r.date) >= from)
+    .map((r) => Math.min(...chains.map((c) => r[c]).filter((v): v is number => typeof v === "number")))
+    .filter((v) => isFinite(v));
+  // Días cubiertos (los días sin cambios no tienen fila: se cuentan por fecha).
+  const firstDate = rows.find((r) => String(r.date) >= from)?.date;
+  const days = firstDate ? Math.round((new Date(lastDate).getTime() - new Date(String(firstDate)).getTime()) / DAY) : 0;
+  if (!past.length || days < minDays) return null;
+  const sorted = [...past].sort((a, b) => a - b);
+  const usual = sorted[Math.floor(sorted.length / 2)];
+  const pct = Math.round(((current - usual) / usual) * 100);
+  if (discounted && current >= usual * 0.97) return { kind: "fake", usual, days };
+  if (current < sorted[0]) return { kind: "lowest", usual, days };
+  if (pct <= -5) return { kind: "below", usual, days, pct: -pct };
+  if (pct >= 5) return { kind: "above", usual, days, pct };
+  return { kind: "usual", usual, days };
 }
