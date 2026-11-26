@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { chainOf } from "@/lib/chains";
-import { BANNERS, cleanDescription, decodeCsv, guessCategory, nearestBranches, normEan, parseCsv, parseSepaPrice, pickDescription, titleCase } from "../../scraper/sepa-lib";
+import { BANNERS, categoryFromVtex, cleanDescription, decodeCsv, guessCategory, nearestBranches, normEan, parseCsv, parseSepaPrice, pickDescription, titleCase } from "../../scraper/sepa-lib";
 
 describe("datos SEPA", () => {
   it("normaliza EAN y descarta códigos internos", () => {
@@ -36,7 +36,11 @@ describe("datos SEPA", () => {
     expect(guessCategory("Detergente Magistral Limón 500 ml")).toBe("Limpieza");
     expect(guessCategory("Desodorante Rexona Men 150 ml")).toBe("Higiene");
     expect(guessCategory("Cerveza Quilmes 1 lt")).toBe("Bebidas");
-    expect(guessCategory("Televisor Smart 50 pulgadas")).toBeNull();
+    expect(guessCategory("Televisor Smart 50 pulgadas")).toBe("Hogar y más");
+    expect(guessCategory("Alimento para Perro Adulto 15 kg")).toBe("Mascotas");
+    expect(guessCategory("Helado de Dulce de Leche 1 kg")).toBe("Congelados");
+    expect(guessCategory("Medallón de Pollo x 4")).toBe("Carnes y Fiambres");
+    expect(guessCategory("Hg Xyz 123")).toBeNull();
   });
 
   it("elige la sucursal más cercana de cada grupo dentro del radio", () => {
@@ -76,5 +80,15 @@ describe("promos SEPA", () => {
     expect(parseSepaPrice("0", "", "", "", "")).toBeNull();
     // Promo absurda (menos del 20% del precio): se ignora.
     expect(parseSepaPrice("1000", "10", "Promo A", "", "")).toEqual({ price: 1000 });
+  });
+});
+
+describe("categorías de VTEX", () => {
+  it("usa la más específica", () => {
+    expect(categoryFromVtex(["/Frescos/", "/Frescos/Lácteos/Yogures/"])).toBe("Lácteos");
+    expect(categoryFromVtex(["/Hogar/", "/Hogar/Bazar/Platos/"])).toBe("Hogar y más");
+    expect(categoryFromVtex(["/Desayunos y Meriendas/Endulzantes/"])).toBe("Almacén");
+    expect(categoryFromVtex(["/Perfumería y Belleza/Cuidado Capilar/"])).toBe("Higiene");
+    expect(categoryFromVtex([])).toBeNull();
   });
 });

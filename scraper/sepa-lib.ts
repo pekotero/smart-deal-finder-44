@@ -124,19 +124,64 @@ export function pickDescription(byCompany: Record<string, string>): string {
   return companies.length ? cleanDescription(companies[0], byCompany[companies[0]]) : "";
 }
 
-// Categoría por palabras del nombre (las de la app). null si no se reconoce: así no se llena
-// "Almacén" de electrodomésticos o ropa.
+// Categorías de la app (las nuevas se crean solas con fill-categories.ts).
+export const CATEGORY_ICONS: Record<string, string> = {
+  Almacén: "🛒",
+  Bebidas: "🥤",
+  Lácteos: "🥛",
+  Limpieza: "🧹",
+  Higiene: "🧴",
+  Panadería: "🍞",
+  "Carnes y Fiambres": "🥩",
+  "Frutas y Verduras": "🥬",
+  Congelados: "🧊",
+  Bebés: "🍼",
+  Mascotas: "🐾",
+  "Hogar y más": "🏠",
+};
+
+// Categoría por palabras del nombre. null si no se reconoce. El orden importa: primero las más
+// específicas ("alimento para perro" antes que Almacén, "helado" antes que Lácteos).
 const CATEGORY_WORDS: [string, RegExp][] = [
-  ["Higiene", /\b(shampoo|champ[uú]|acondicionador|desmaquill\w*|antitransp\w*|crema (de manos|p\/ ?manos|facial|corporal|para peinar)|protector solar|jab[oó]n de tocador|desodorante(?! de ambiente)|antitranspirante|pasta dental|crema dental|cepillo dental|enjuague bucal|toallitas|toallas femeninas|protectores diarios|tampones|pa[nñ]al|papel higi[eé]nico|afeitar|maquinita|algod[oó]n|hisopos)\b/i],
-  ["Limpieza", /\b(detergente|lavandina|lavavajilla|jab[oó]n (en polvo|l[ií]quido para ropa)|suavizante|limpiador|desengrasante|limpia ?vidrios|desodorante de ambiente|insecticida|esponja|trapo|rejilla|bolsas de residuo|cera para pisos|quitamanchas|cloro)\b/i],
-  ["Lácteos", /\b(leche|yogur|yoghurt|queso|manteca|crema de leche|dulce de leche|postre l[aá]cteo|ricota|leche cultivada)\b/i],
-  ["Bebidas", /\b(gaseosa|agua (mineral|saborizada|con gas|sin gas)|soda|jugo|cerveza|vino|fernet|aperitivo|bebida|energizante|isot[oó]nica|sidra|espumante|whisky|vodka|gin|licor)\b/i],
-  ["Panadería", /\b(pan (lactal|de molde|rallado|dulce|blanco|integral|de pancho|de hamburguesa)|budin|bud[ií]n|magdalenas|prepizza|tostadas|grisines|tapas para empanadas|tapas de empanadas|facturas|medialunas|bizcochos)\b/i],
-  ["Almacén", /\b(aceite|arroz|fideos|harina|az[uú]car|yerba|caf[eé]|t[eé] |mate cocido|galletitas|galletas|mermelada|at[uú]n|arvejas|choclo|tomate|pur[eé]|salsa|mayonesa|ketchup|mostaza|vinagre|sal fina|sal gruesa|polenta|lentejas|porotos|garbanzos|cacao|chocolate|caramelos|alfajor|cereal|avena|snack|papas fritas|man[ií]|aceitunas|sopa|caldo|condimento|especias|or[eé]gano|pimienta|edulcorante|gelatina|flan|bizcochuelo|leche en polvo|conserva)\b/i],
+  ["Mascotas", /\b(perros?|gatos?|mascotas?|pet'?s class|pet shop|piedras sanitarias|arena sanitaria|dog chow|cat chow|pedigree|whiskas|excellent|eukanuba|royal canin|old prince|sieger|vital can|pro plan)\b/i],
+  ["Bebés", /\b(pa[nñ]al(es)?|beb[eé]s?|baby|mamadera|chupete|toallitas h[uú]medas|leche (de f[oó]rmula|infantil)|nutrilon|nan optipro|vital ?3|sancor bebe|huggies|pampers|babysec|estrella baby|algabo baby)\b/i],
+  ["Congelados", /\b(congelad[oa]s?|helados?|hielo|ice cream|bocaditos de|patitas de pollo|nuggets|papas (pre ?fritas|congeladas)|vegetales congelados|hamburguesas? congelad)\b/i],
+  ["Carnes y Fiambres", /\b(carne|nalga|cuadril|vac[ií]o|asado|matambre|bife|peceto|osobuco|carr[eé]|bondiola|pollo|pechuga|suprema|muslo|alitas|chorizo|morcilla|salchich[oó]n|salchichas?|milanesas?|medall[oó]n(es)?|hamburguesas?|jam[oó]n|paleta cocida|salame|salamín|mortadela|fiambre|bondiola|panceta|lomo|pescado|merluza|at[uú]n fresco|salm[oó]n|langostinos|mondongo|carne picada)\b/i],
+  ["Higiene", /\b(shampoo|champ[uú]|acondicionador|desmaquill\w*|antitransp\w*|crema (de manos|p\/ ?manos|facial|corporal|para peinar|dental)|protector solar|jab[oó]n de tocador|desodorante(?! de ambiente)|antitranspirante|pasta dental|cepillo dental|enjuague bucal|toallas femeninas|protectores diarios|tampones|papel higi[eé]nico|afeitar|maquinita|algod[oó]n|hisopos|coloraci[oó]n|tintura|perfume|colonia|maquillaje|esmalte|preservativos|curitas|ap[oó]sitos|alcohol en gel|alcohol et[ií]lico)\b/i],
+  ["Limpieza", /\b(detergente|lavandina|lavavajilla|jab[oó]n (en polvo|l[ií]quido para ropa|para ropa)|suavizante|limpiador|desengrasante|limpia ?vidrios|desodorante de ambiente|aromatizante|insecticida|esponja|trapo|rejilla|bolsas de residuo|bolsas para residuo|cera para pisos|quitamanchas|cloro|escobill[oó]n|escoba|secador de piso|lampazo|pa[nñ]o (multiuso|de limpieza)|guantes de limpieza|fregona|desinfectante|repelente)\b/i],
+  ["Lácteos", /\b(leche|yogur|yoghurt|queso|manteca|crema de leche|dulce de leche|postre l[aá]cteo|ricota|leche cultivada|mozzarella|muzzarella|reggianito|cremoso)\b/i],
+  ["Bebidas", /\b(gaseosa|agua (mineral|saborizada|con gas|sin gas|de mesa)|soda|jugo|cerveza|vino|fernet|aperitivo|bebida|energizante|isot[oó]nica|sidra|espumante|champa[nñ]a|whisky|vodka|gin|licor|ron|tequila|vermouth|malbec|cabernet|chardonnay)\b/i],
+  ["Frutas y Verduras", /\b(banana|manzanas?|naranjas?|mandarinas?|limones|lim[oó]n x kg|peras?|uvas?|frutillas?|ar[aá]ndanos?|kiwi|anan[aá] fresco|sand[ií]a|mel[oó]n|duraznos?|ciruelas?|palta|tomates? (perita|redondo|cherry)|lechuga|r[uú]cula|acelga|espinaca|zanahorias?|cebollas?|zapallos?|zapallitos?|calabaza|batata|boniato|papa (blanca|negra)|papas? x kg|morr[oó]n|pepino|berenjena|br[oó]coli|coliflor|repollo|choclo fresco|ajo|jengibre|hongos|champi[nñ]ones|verdura|fruta fresca)\b/i],
+  ["Panadería", /\b(pan (lactal|de molde|rallado|dulce|blanco|integral|de pancho|de hamburguesa|de viena)|budin|bud[ií]n|magdalenas|prepizza|tostadas|grisines|tapas para empanadas|tapas de empanadas|facturas|medialunas|bizcochos|pan x kg|panettone)\b/i],
+  ["Almacén", /\b(aceite|arroz|fideos|harina|az[uú]car|yerba|caf[eé]|t[eé] |mate cocido|galletitas|galletas|mermelada|at[uú]n|arvejas|choclo|tomate|pur[eé]|salsa|mayonesa|ketchup|mostaza|vinagre|aceto|sal fina|sal gruesa|polenta|lentejas|porotos|garbanzos|cacao|chocolate|caramelos|alfajor|cereal|avena|granola|snack|papas fritas|chips|man[ií]|aceitunas|sopa|caldo|condimento|especias|or[eé]gano|pimienta|edulcorante|endulzante|gelatina|flan|bizcochuelo|premezcla|leche en polvo|conserva|miel|ravioles|[nñ]oquis|tapas de|pastas|gomitas|chicles?|turr[oó]n|oblea|barra de cereal|pizza|huevos?)\b/i],
+  ["Hogar y más", /\b(plato|vaso|copa|bowl|taza|mug|jarro|jarra|cubiertos?|cuchara|tenedor|cuchillo|sart[eé]n|cacerola|olla|bifera|fuente|molde|tupper|herm[eé]tico|frasco|tarro|termo|botella t[eé]rmica|toalla|toall[oó]n|s[aá]bana|frazada|acolchado|almohad[oó]n|almohada|mantel|repasador|cortina|alfombra|vela|sahumerio|difusor|maceta|silla|mesa|l[aá]mpara|led|foco|pilas?|cable|alargue|adorno|arbol de navidad|guirnalda|globo|cotill[oó]n|juguete|mu[nñ]eca|peluche|pelota|juego de|rompecabezas|cuaderno|l[aá]piz|lapicera|marcador|remera|camisa|pantal[oó]n|jean|buzo|campera|medias|boxer|bombacha|corpi[nñ]o|pijama|sandalia|ojota|zapatilla|bota|mochila|valija|bolso|bandolera|cartera|organizador|canasto|cesto|perchas?|estante|ventilador|estufa|pava|tostadora|licuadora|batidora|microondas|heladera|televisor|smart tv|auriculares|parlante|celular|cargador|herramienta|destornillador|martillo|taladro|pala|manguera|neum[aá]tico|set de|kit de)\b/i],
 ];
 
 export function guessCategory(name: string): string | null {
   for (const [cat, re] of CATEGORY_WORDS) if (re.test(name)) return cat;
+  return null;
+}
+
+// Categoría a partir de las categorías VTEX de la cadena ("/Frescos/Lácteos/Yogures/").
+const VTEX_RULES: [string, RegExp][] = [
+  ["Mascotas", /mascota/i],
+  ["Bebés", /beb[eé]|pa[nñ]al|maternidad/i],
+  ["Congelados", /congelad|helado/i],
+  ["Carnes y Fiambres", /carne|carnicer|fiambre|pescad|pollo|embutido|granja/i],
+  ["Frutas y Verduras", /fruta|verdura|verduler/i],
+  ["Lácteos", /l[aá]cteo|leche|yogur|queso|manteca|crema/i],
+  ["Panadería", /panader|pan |pan$|budin|facturas/i],
+  ["Bebidas", /bebida|vino|cerveza|gaseosa|agua|jugo|aperitivo|espumante|licor/i],
+  ["Higiene", /perfumer|farmacia|higiene|belleza|cuidado personal|cuidado capilar|cuidado oral/i],
+  ["Limpieza", /limpieza|lavado|desodorante de ambiente|insecticida/i],
+  ["Almacén", /almac[eé]n|desayuno|merienda|golosina|snack|kiosco|conserva|aceite|pasta|arroz|harina|infusion|caf[eé]|yerba|frescos|diet[eé]tica|sin tacc|reposter/i],
+  ["Hogar y más", /hogar|bazar|electro|tecno|deporte|ocio|aire libre|indumentaria|calzado|ropa|jugueter|librer|automotor|festividad|navidad|jard[ií]n|ferreter|textil|muebles|bebés y niños/i],
+];
+
+export function categoryFromVtex(paths: string[]): string | null {
+  // De la más específica (más larga) a la más general.
+  const sorted = [...paths].sort((a, b) => b.length - a.length);
+  for (const p of sorted) for (const [cat, re] of VTEX_RULES) if (re.test(p)) return cat;
   return null;
 }
 
