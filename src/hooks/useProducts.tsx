@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { pickPrices, priceSources, type SourceStore } from "@/lib/price-pick";
+import { pickPrices, priceSources, type RawPrice, type SourceStore } from "@/lib/price-pick";
+import type { QtyPromo } from "@/lib/qty-promo";
 
 export { chainOf, isOnlineChain } from "@/lib/chains";
 
@@ -17,6 +18,8 @@ export interface PriceComparison {
   // Precio de esa sucursal (SEPA), no el online de la cadena.
   local?: boolean;
   address?: string;
+  // Promo por cantidad ("2° al 70%").
+  promo?: QtyPromo;
 }
 
 export interface Product {
@@ -70,7 +73,7 @@ interface SearchRow {
   image_url: string | null;
   ean: string | null;
   category_name: string | null;
-  prices: { id: string; store_id: string; price: number; original_price: number | null; last_updated: string | null }[] | null;
+  prices: RawPrice[] | null;
   total: number;
 }
 

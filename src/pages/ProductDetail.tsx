@@ -17,6 +17,7 @@ import { useStores } from '@/hooks/useStores';
 import { getOnlineSources } from '@/hooks/useProducts';
 import { pickPrices, priceSources } from '@/lib/price-pick';
 import { sizeFromName, sizeKey, sizeLabel, unitPrice, unitPriceLabel } from '@/lib/size';
+import { qtyPromoLabel } from '@/lib/qty-promo';
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -62,13 +63,7 @@ export default function ProductDetail() {
               id,
               name
             ),
-            prices (
-              id,
-              price,
-              original_price,
-              last_updated,
-              store_id
-            )
+            prices (*)
           `)
           .eq('id', id)
           .maybeSingle();
@@ -212,7 +207,7 @@ export default function ProductDetail() {
                   id: product.id,
                   name: product.name,
                   image: product.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&q=80',
-                  prices: pricesList.map((p: any) => ({ store: p.storeName, price: p.price })),
+                  prices: pricesList.map((p: any) => ({ store: p.storeName, price: p.price, promo: p.promo })),
                 });
                 toast.success(wasIn ? 'Sumaste uno más al carrito' : 'Agregado al carrito', {
                   action: { label: 'Ver carrito', onClick: () => navigate('/carrito') },
@@ -334,6 +329,14 @@ export default function ProductDetail() {
                         <span className="text-lg font-black text-foreground block">
                           ${item.price.toLocaleString('es-AR')}
                         </span>
+                        {item.originalPrice && (
+                          <span className="text-xs text-muted-foreground line-through block">
+                            ${item.originalPrice.toLocaleString('es-AR')}
+                          </span>
+                        )}
+                        {item.promo && (
+                          <span className="text-xs font-semibold text-primary block">{qtyPromoLabel(item.promo)}</span>
+                        )}
                         {size && (
                           <span className="text-xs text-muted-foreground block">
                             {unitPriceLabel(unitPrice(item.price, size))}

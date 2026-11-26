@@ -164,3 +164,55 @@ export function nearestBranches(branches: Branch[], zones: Zone[]) {
   }
   return [...chosen.values()];
 }
+
+// ---------- promos ----------
+export interface SepaPrice {
+  price: number; // lo que se paga por una unidad (con la rebaja directa, si hay)
+  original?: number; // precio de lista, si hay rebaja directa
+  // Promo por cantidad: precio por unidad llevando minQty o más.
+  promo?: { text: string; unitPrice: number; minQty: number };
+}
+
+const num = (s: string | undefined) => {
+  const n = parseFloat(String(s ?? "").replace(",", "."));
+  return n > 0 ? n : 0;
+};
+
+// Lo que dice la promo, sin el "NN% de descuento." ni la vigencia: "2DO AL 70% SIDRAS Y".
+const promoBody = (legend: string) =>
+  legend
+    .replace(/^\s*\d+([.,]\d+)?% de descuento\.\s*/i, "")
+    .replace(/\s*-\s*Vigencia:.*$/i, "")
+    .trim();
+
+// Precio de una fila de productos.csv con sus dos promos. promo1 es una rebaja por unidad
+// (Carrefour "Promo A", Día "Precio Promocional"); en promo2 Día pone rebajas directas ("25% SEDAL")
+// y promos por cantidad ("2DO AL 70%", "3X2", "2X$1000").
+export function parseSepaPrice(list: string, p1: string, l1: string, p2: string, l2: string): SepaPrice | null {
+  const lista = num(list);
+  if (!lista) return null;
+  const out: SepaPrice = { price: lista };
+  const promo1 = num(p1);
+  if (promo1 && promo1 < lista && promo1 >= lista * 0.2 && (l1 || "").trim()) {
+    out.price = promo1;
+    out.original = lista;
+  }
+  const promo2 = num(p2);
+  const body = promoBody(l2 || "");
+  if (promo2 && promo2 < lista && promo2 >= lista * 0.2 && body) {
+    let m: RegExpMatchArray | null;
+    let multi: { text: string; minQty: number } | null = null;
+    if ((m = body.match(/\b(\d)\s*(?:DO|DA|°|º)\s+AL\s+(\d+)\s*%/i))) multi = { text: `${m[1]}° al ${m[2]}%`, minQty: Number(m[1]) };
+    else if ((m = body.match(/\b(\d)\s*X\s*\$\s*([\d.]+)/i)))
+      multi = { text: `${m[1]} x $${Number(m[2].replace(/\./g, "")).toLocaleString("es-AR")}`, minQty: Number(m[1]) };
+    else if ((m = body.match(/\b(\d)\s*X\s*(\d)\b/i)) && Number(m[1]) > Number(m[2])) multi = { text: `${m[1]}x${m[2]}`, minQty: Number(m[1]) };
+    if (multi && multi.minQty >= 2) {
+      if (promo2 < out.price) out.promo = { text: multi.text, unitPrice: promo2, minQty: multi.minQty };
+    } else if (/^\d+\s*%/.test(body) && promo2 < out.price) {
+      // Rebaja directa ("25% SEDAL").
+      out.price = promo2;
+      out.original = lista;
+    }
+  }
+  return out;
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { chainOf } from "@/lib/chains";
-import { BANNERS, cleanDescription, decodeCsv, guessCategory, nearestBranches, normEan, parseCsv, pickDescription, titleCase } from "../../scraper/sepa-lib";
+import { BANNERS, cleanDescription, decodeCsv, guessCategory, nearestBranches, normEan, parseCsv, parseSepaPrice, pickDescription, titleCase } from "../../scraper/sepa-lib";
 
 describe("datos SEPA", () => {
   it("normaliza EAN y descarta códigos internos", () => {
@@ -52,5 +52,29 @@ describe("datos SEPA", () => {
   it("los nombres de las banderas dan la cadena de la app", () => {
     const chains = new Set(Object.values(BANNERS).map((n) => chainOf(`${n} (Calle 1, Tigre)`)));
     expect([...chains].sort()).toEqual(["Carrefour", "ChangoMás", "Coto", "Cooperativa Obrera", "Disco", "Día", "Jumbo", "La Anónima", "Vea"].sort());
+  });
+});
+
+describe("promos SEPA", () => {
+  it("rebaja directa de promo1", () => {
+    expect(parseSepaPrice("2190.00", "1890.00", "Promo A valida desde el 25/11/2026 hasta 01/12/2026", "", "")).toEqual({ price: 1890, original: 2190 });
+  });
+
+  it("promos por cantidad de Día", () => {
+    const v = (l: string, p: string, list = "5990.00") => parseSepaPrice(list, "", "", p, `35% de descuento. ${l} - Vigencia: Desde el 25/11/2026 hasta el 30/11/2026`);
+    expect(v("2DO AL 70% SIDRAS Y", "3893.50")).toEqual({ price: 5990, promo: { text: "2° al 70%", unitPrice: 3893.5, minQty: 2 } });
+    expect(v("3X2 CLIGHT", "3993.33")?.promo).toEqual({ text: "3x2", unitPrice: 3993.33, minQty: 3 });
+    expect(v("2X$1000 ALFJ TURIMAR", "500.00", "720.00")?.promo).toEqual({ text: "2 x $1.000", unitPrice: 500, minQty: 2 });
+  });
+
+  it("rebaja directa en promo2 y casos raros", () => {
+    expect(parseSepaPrice("4020.00", "", "", "3015.00", "25% de descuento. 25% ALA ROPA - Vigencia: Desde el 25/11/2026 hasta el 30/11/2026")).toEqual({
+      price: 3015,
+      original: 4020,
+    });
+    expect(parseSepaPrice("1000", "", "", "", "")).toEqual({ price: 1000 });
+    expect(parseSepaPrice("0", "", "", "", "")).toBeNull();
+    // Promo absurda (menos del 20% del precio): se ignora.
+    expect(parseSepaPrice("1000", "10", "Promo A", "", "")).toEqual({ price: 1000 });
   });
 });

@@ -17,7 +17,7 @@ import { fileURLToPath } from "url";
 import yauzl from "yauzl";
 import { chainOf } from "../src/lib/chains";
 import { suspiciousPrice } from "./price-rules";
-import { BANNERS, Branch, decodeCsv, guessCategory, nearestBranches, normEan, parseCsv, pickDescription, titleCase, ZONES } from "./sepa-lib";
+import { BANNERS, Branch, decodeCsv, guessCategory, nearestBranches, normEan, parseCsv, parseSepaPrice, pickDescription, titleCase, ZONES, type SepaPrice } from "./sepa-lib";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, ".env") });
@@ -90,7 +90,7 @@ async function readSepa(file: string) {
   const chosen: Chosen[] = [];
   const parsedCompanies = new Set<string>();
   // precio por sucursal y EAN; descripciones y marca por EAN.
-  const prices = new Map<string, Map<string, number>>();
+  const prices = new Map<string, Map<string, SepaPrice>>();
   const info = new Map<string, { descs: Record<string, string>; brand: string }>();
 
   for (const e of await entries(outer)) {
@@ -153,8 +153,14 @@ async function readSepa(file: string) {
       if (!branch) continue;
       if (f[ix.productos_ean]?.trim() === "0") continue; // código interno, no EAN
       const ean = normEan(f[ix.id_producto]);
-      const price = parseFloat(f[ix.productos_precio_lista]);
-      if (!ean || !(price > 0)) continue;
+      const price = parseSepaPrice(
+        f[ix.productos_precio_lista],
+        f[ix.productos_precio_unitario_promo1],
+        f[ix.productos_leyenda_promo1],
+        f[ix.productos_precio_unitario_promo2],
+        f[ix.productos_leyenda_promo2],
+      );
+      if (!ean || !price) continue;
       branch.set(ean, price);
       const it = info.get(ean) ?? { descs: {}, brand: "" };
       const desc = f[ix.productos_descripcion]?.trim();
@@ -170,7 +176,7 @@ async function readSepa(file: string) {
 }
 
 // Saca los precios que no tienen sentido contra los de otras cadenas de la misma zona.
-function dropOutliers(chosen: Chosen[], prices: Map<string, Map<string, number>>) {
+function dropOutliers(chosen: Chosen[], prices: Map<string, Map<string, SepaPrice>>) {
   const dropped = new Map<string, number>();
   for (const zone of new Set(chosen.map((c) => c.zone))) {
     const inZone = chosen.filter((c) => c.zone === zone);
@@ -178,7 +184,7 @@ function dropOutliers(chosen: Chosen[], prices: Map<string, Map<string, number>>
     for (const c of inZone)
       for (const [ean, price] of prices.get(c.key)!) {
         const list = byEan.get(ean) ?? [];
-        list.push({ key: c.key, chain: c.chain, price });
+        list.push({ key: c.key, chain: c.chain, price: price.original ?? price.price });
         byEan.set(ean, list);
       }
     for (const [e, list] of byEan)
@@ -239,7 +245,7 @@ async function productIds(sb: DB, info: Map<string, { descs: Record<string, stri
   return { ids, created: missing.length };
 }
 
-async function writeBranch(sb: DB, c: Chosen, branchPrices: Map<string, number>, ids: Map<string, string>) {
+async function writeBranch(sb: DB, c: Chosen, branchPrices: Map<string, SepaPrice>, ids: Map<string, string>, promoCols: boolean) {
   const { data: store, error } = await sb
     .from("stores")
     .upsert(
@@ -251,10 +257,10 @@ async function writeBranch(sb: DB, c: Chosen, branchPrices: Map<string, number>,
   if (error) throw error;
   const storeId = store.id as string;
 
-  const current = await all<{ id: string; product_id: string; price: number }>((a, b) =>
-    sb.from("prices").select("id, product_id, price").eq("store_id", storeId).order("id").range(a, b),
-  );
-  const want = new Map<string, number>();
+  type Row = { id: string; product_id: string; price: number; original_price: number | null; promo_text?: string | null; promo_price?: number | null; promo_min_qty?: number | null };
+  const cols = "id, product_id, price, original_price" + (promoCols ? ", promo_text, promo_price, promo_min_qty" : "");
+  const current = await all<Row>((a, b) => sb.from("prices").select(cols).eq("store_id", storeId).order("id").range(a, b) as never);
+  const want = new Map<string, SepaPrice>();
   for (const [e, price] of branchPrices) {
     const pid = ids.get(e);
     if (pid) want.set(pid, price);
@@ -266,10 +272,26 @@ async function writeBranch(sb: DB, c: Chosen, branchPrices: Map<string, number>,
   }
   const now = new Date().toISOString();
   const have = new Map(current.map((p) => [p.product_id, p]));
-  const inserts = [...want].filter(([pid]) => !have.has(pid)).map(([pid, price]) => ({ product_id: pid, store_id: storeId, price, last_updated: now, verified: true }));
+  const fields = (sp: SepaPrice) => ({
+    price: sp.price,
+    original_price: sp.original ?? null,
+    ...(promoCols ? { promo_text: sp.promo?.text ?? null, promo_price: sp.promo?.unitPrice ?? null, promo_min_qty: sp.promo?.minQty ?? null } : {}),
+  });
+  // Cambió algo de lo que se muestra (precio, precio de lista o promo).
+  const differs = (p: Row, sp: SepaPrice) => {
+    const f = fields(sp) as Record<string, unknown>;
+    return Object.keys(f).some((k) => {
+      const a = (p as Record<string, unknown>)[k];
+      const b = f[k];
+      return a == null || b == null ? a != b : String(a) !== String(b) && Number(a) !== Number(b);
+    });
+  };
+  const inserts = [...want]
+    .filter(([pid]) => !have.has(pid))
+    .map(([pid, sp]) => ({ product_id: pid, store_id: storeId, ...fields(sp), last_updated: now, verified: true }));
   const updates = current
-    .filter((p) => want.has(p.product_id) && Number(p.price) !== want.get(p.product_id))
-    .map((p) => ({ id: p.id, product_id: p.product_id, store_id: storeId, price: want.get(p.product_id)!, last_updated: now, verified: true }));
+    .filter((p) => want.has(p.product_id) && differs(p, want.get(p.product_id)!))
+    .map((p) => ({ id: p.id, product_id: p.product_id, store_id: storeId, ...fields(want.get(p.product_id)!), last_updated: now, verified: true }));
   const gone = current.filter((p) => !want.has(p.product_id)).map((p) => p.id);
 
   for (const part of chunks(inserts, 1000)) {
@@ -329,8 +351,11 @@ if (!WRITE) {
   }
   console.log("\nModo prueba: no se escribió nada. Con --write se carga.");
 } else {
+  // Las columnas de promos existen desde la migración 20261126120000; antes se cargan sólo precios.
+  const promoCols = !(await sb.from("prices").select("promo_text").limit(1)).error;
+  if (!promoCols) console.warn("La base todavía no tiene las columnas de promos: se cargan sólo los precios.");
   for (const c of chosen) {
-    const r = await writeBranch(sb, c, prices.get(c.key)!, ids);
+    const r = await writeBranch(sb, c, prices.get(c.key)!, ids, promoCols);
     console.log(`${c.name}: ${r.inserted} nuevos, ${r.updated} cambiaron, ${r.deleted} ya no están.`);
   }
   await retireOld(sb, chosen, parsedCompanies);

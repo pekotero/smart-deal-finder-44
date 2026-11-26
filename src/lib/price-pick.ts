@@ -4,6 +4,7 @@
 // - local: precios de una sucursal cercana (SEPA o cargados por usuarios). Ganan sobre el online
 //   porque son los de esa góndola; entre varias sucursales, la más cercana.
 import { chainOf, isOnlineChain } from "./chains";
+import { qtyPromoFrom, type QtyPromo } from "./qty-promo";
 
 export interface SourceStore {
   id: string;
@@ -19,6 +20,9 @@ export interface RawPrice {
   price: number | string;
   original_price?: number | string | null;
   last_updated?: string | null;
+  promo_text?: string | null;
+  promo_price?: number | string | null;
+  promo_min_qty?: number | null;
 }
 
 export interface PickedPrice {
@@ -34,6 +38,8 @@ export interface PickedPrice {
   online: boolean;
   // Precio de esa sucursal (no el online de la cadena).
   local: boolean;
+  // Promo por cantidad de esa sucursal.
+  promo?: QtyPromo;
 }
 
 interface Source {
@@ -99,6 +105,7 @@ export function pickPrices(rows: RawPrice[], sources: PriceSources): PickedPrice
         address: src.branch.address || undefined,
         online: isOnlineChain(src.chain),
         local: src.rank === 0,
+        promo: qtyPromoFrom(row),
       };
     })
     .sort((a, b) => a.price - b.price);

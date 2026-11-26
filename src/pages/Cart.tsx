@@ -5,6 +5,7 @@ import { bestEverywhere, bestSingle, bestSplit, chainsIn, type Plan, type PromoF
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useCart, totalsByChain } from "@/hooks/useCart";
+import { lineCost } from "@/lib/qty-promo";
 import { PEDIDOSYA_STORES, pedidosYaSearchUrl } from "@/lib/pedidosya";
 import { useBankPromos, usePromoPrefs } from "@/hooks/useBankPromos";
 import { bestPromoForChain, promoLabel, today, WEEK } from "@/lib/promos";
@@ -364,7 +365,7 @@ export default function Cart() {
                           {item.qty} × {item.name}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {p ? money(p.price * item.qty) : "No lo encontramos en esta tienda; probá buscarlo igual"}
+                          {p ? money(lineCost(p.price, item.qty, p.promo)) : "No lo encontramos en esta tienda; probá buscarlo igual"}
                         </p>
                       </div>
                       {url && (

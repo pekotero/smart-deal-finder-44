@@ -8,11 +8,11 @@ export interface PriceFilters {
 
 interface Filterable {
   bestPrice?: number;
-  prices: { price: number; originalPrice?: number }[];
+  prices: { price: number; originalPrice?: number; promo?: unknown }[];
 }
 
-// Tiene descuento si algún precio de los que se muestran está rebajado.
-export const hasDiscount = (p: Filterable) => p.prices.some((pr) => pr.originalPrice && pr.originalPrice > pr.price);
+// Tiene descuento si algún precio de los que se muestran está rebajado o tiene promo por cantidad.
+export const hasDiscount = (p: Filterable) => p.prices.some((pr) => (pr.originalPrice && pr.originalPrice > pr.price) || !!pr.promo);
 
 export function applyPriceFilters<T extends Filterable>(list: T[], f: PriceFilters): T[] {
   return list.filter((p) => {

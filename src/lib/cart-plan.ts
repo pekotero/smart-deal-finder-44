@@ -1,5 +1,6 @@
 // Planes de compra para el carrito: todo en un super, o repartido entre dos.
 import type { CartItem } from "@/hooks/useCart";
+import { lineCost } from "./qty-promo";
 
 // Promo que aplica a una cadena para un subtotal (null si ninguna). La arma quien llama, con las
 // promos, los medios de pago y el día elegidos.
@@ -20,10 +21,14 @@ export interface Plan {
   missing: CartItem[];
 }
 
-const priceIn = (item: CartItem, chain: string) => item.prices.find((p) => p.store === chain)?.price;
+// Lo que cuesta el renglón (con la cantidad y la promo por cantidad) en una cadena.
+const priceIn = (item: CartItem, chain: string) => {
+  const p = item.prices.find((x) => x.store === chain);
+  return p ? lineCost(p.price, item.qty, p.promo) : undefined;
+};
 
 function part(chain: string, items: CartItem[], promoFor: PromoFor): StorePart {
-  const subtotal = items.reduce((s, i) => s + priceIn(i, chain)! * i.qty, 0);
+  const subtotal = items.reduce((s, i) => s + priceIn(i, chain)!, 0);
   const save = promoFor(chain, subtotal)?.save ?? 0;
   return { chain, items, subtotal, save, final: subtotal - save };
 }

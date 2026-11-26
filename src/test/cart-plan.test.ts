@@ -53,3 +53,22 @@ describe("máximo ahorro", () => {
     expect(bestEverywhere(items, chainsIn(items), noPromo)).toBeNull();
   });
 });
+
+describe("promos por cantidad", () => {
+  it("el carrito cobra la promo por cada grupo completo", async () => {
+    const { lineCost } = await import("@/lib/qty-promo");
+    const promo = { text: "2° al 70%", unitPrice: 650, minQty: 2 };
+    expect(lineCost(1000, 1, promo)).toBe(1000);
+    expect(lineCost(1000, 2, promo)).toBe(1300);
+    expect(lineCost(1000, 3, promo)).toBe(2300);
+  });
+
+  it("los planes eligen el super con promo si conviene por la cantidad", () => {
+    const two = [
+      { id: "sidra", name: "sidra", image: "", qty: 2, prices: [{ store: "Coto", price: 900 }, { store: "Día", price: 1000, promo: { text: "2° al 70%", unitPrice: 650, minQty: 2 } }] },
+    ];
+    const p = bestSingle(two, chainsIn(two), noPromo)!;
+    expect(p.parts[0].chain).toBe("Día");
+    expect(p.final).toBe(1300);
+  });
+});

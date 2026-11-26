@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
+import { lineCost, type QtyPromo } from "@/lib/qty-promo";
 
 // Carrito guardado en el navegador y, si iniciaste sesión, también en tu cuenta (así lo ves en el
 // celu y en la compu). Si la cuenta no responde, sigue funcionando sólo con el navegador.
@@ -10,7 +12,7 @@ export interface CartItem {
   image: string;
   qty: number;
   // Precio por cadena cuando se agregó (las cadenas cercanas al usuario).
-  prices: { store: string; price: number }[];
+  prices: { store: string; price: number; promo?: QtyPromo }[];
   // Cadenas de PedidosYa donde el usuario marcó que ya lo agregó.
   added?: string[];
 }
@@ -125,7 +127,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
             name: i.name,
             image: i.image || null,
             qty: i.qty,
-            prices: i.prices,
+            prices: i.prices as unknown as Json,
             added: i.added ?? [],
             updated_at: new Date().toISOString(),
           })),
@@ -193,7 +195,7 @@ export function totalsByChain(items: CartItem[]) {
   for (const item of items) {
     for (const p of item.prices) {
       const t = chains.get(p.store) ?? { total: 0, found: 0 };
-      t.total += p.price * item.qty;
+      t.total += lineCost(p.price, item.qty, p.promo);
       t.found += 1;
       chains.set(p.store, t);
     }

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useCart } from "@/hooks/useCart";
 import { sizeFromName, sizeKey, sizeLabel, unitPrice, unitPriceLabel } from "@/lib/size";
+import { qtyPromoLabel, type QtyPromo } from "@/lib/qty-promo";
 
 export interface PriceInfo {
   store: string;
@@ -14,6 +15,7 @@ export interface PriceInfo {
   storeId?: string;
   distance?: string;
   distanceKm?: number;
+  promo?: QtyPromo;
 }
 
 interface ProductCardProps {
@@ -48,7 +50,7 @@ const ProductCard = ({ id, name, image, category, prices, onClick }: ProductCard
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
-    cart.add({ id, name, image, prices: prices.map((p) => ({ store: p.store, price: p.price })) });
+    cart.add({ id, name, image, prices: prices.map((p) => ({ store: p.store, price: p.price, promo: p.promo })) });
     toast.success(inCart ? "Sumaste uno más al carrito" : "Agregado al carrito", {
       action: { label: "Ver carrito", onClick: () => navigate("/carrito") },
     });
@@ -160,6 +162,11 @@ const ProductCard = ({ id, name, image, category, prices, onClick }: ProductCard
                       {size && (
                         <div className="text-[10px] text-muted-foreground">
                           {unitPriceLabel(unitPrice(priceInfo.price, size))}
+                        </div>
+                      )}
+                      {priceInfo.promo && (
+                        <div className="text-[10px] font-semibold text-primary" title={qtyPromoLabel(priceInfo.promo)}>
+                          {priceInfo.promo.text}
                         </div>
                       )}
                     </div>
