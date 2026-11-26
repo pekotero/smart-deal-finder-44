@@ -9,7 +9,12 @@ export interface Zone {
 }
 
 // Zonas donde se cargan precios por sucursal. El centro es un punto público de referencia.
-export const ZONES: Zone[] = [{ name: "Zona Norte GBA", lat: -34.49, lng: -58.62, radiusKm: 15 }];
+export const ZONES: Zone[] = [
+  { name: "Zona Norte GBA", lat: -34.49, lng: -58.62, radiusKm: 15 },
+  // Centro de Rosario: la app lo usa cuando no tiene la ubicación del usuario.
+  { name: "Rosario", lat: -32.9468, lng: -60.6393, radiusKm: 15 },
+  { name: "CABA", lat: -34.6037, lng: -58.3816, radiusKm: 10 },
+];
 
 // Banderas que se cargan (id_comercio-id_bandera) y con qué nombre: el nombre tiene que dar la
 // cadena correcta en chainOf. Quedan afuera mayoristas, farmacias y estaciones de servicio.
